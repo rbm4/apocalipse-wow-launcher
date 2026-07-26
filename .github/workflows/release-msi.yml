@@ -32,15 +32,34 @@ jobs:
       - name: Install WiX Toolset
         shell: powershell
         run: |
-          choco install wixtoolset -y --no-progress
-          $wixRoot = Get-ChildItem -Path "${env:ProgramFiles(x86)}" -Directory -Filter "WiX Toolset v*" |
+          choco install wixtoolset --version=3.11.2 -y --no-progress
+
+          $possibleRoots = @(
+            (Join-Path ${env:ProgramFiles(x86)} "WiX Toolset v3.11"),
+            (Join-Path ${env:ProgramFiles(x86)} "WiX Toolset v3.11.2"),
+            (Join-Path ${env:ProgramFiles} "WiX Toolset v3.11"),
+            (Join-Path ${env:ProgramFiles} "WiX Toolset v3.11.2")
+          )
+          $wixRootPath = $possibleRoots | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $wixRootPath) {
+            $wixRoot = Get-ChildItem -Path "${env:ProgramFiles(x86)}","${env:ProgramFiles}" -Directory -Filter "WiX Toolset v*" -ErrorAction SilentlyContinue |
             Sort-Object -Property Name -Descending |
             Select-Object -First 1
-          if (-not $wixRoot) {
+            if ($wixRoot) {
+              $wixRootPath = $wixRoot.FullName
+            }
+          }
+          if (-not $wixRootPath) {
             throw "WiX Toolset installation directory was not found."
           }
-          $wixBin = Join-Path $wixRoot.FullName "bin"
+          $wixBin = Join-Path $wixRootPath "bin"
+          $env:Path = "$wixBin;$env:Path"
           Add-Content -Path $env:GITHUB_PATH -Value $wixBin
+          Write-Host "WiX bin: $wixBin"
+          Get-Command light.exe -ErrorAction SilentlyContinue | Format-List -Force
+          if (-not (Get-Command light.exe -ErrorAction SilentlyContinue)) {
+            throw "light.exe was not found in PATH after installing WiX."
+          }
 
       - name: Read Maven project version
         id: version
@@ -49,16 +68,63 @@ jobs:
           $version = mvn help:evaluate -Dexpression=project.version -q -DforceStdout
           "version=$version" >> $env:GITHUB_OUTPUT
 
+      - name: Diagnostics (Maven, jpackage, WiX)
+        shell: powershell
+        run: |
+          Write-Host "=== java version ==="
+          java -version 2>&1
+
+          Write-Host "=== mvn version ==="
+          mvn -v 2>&1
+
+          Write-Host "=== jpackage ==="
+          jpackage --version 2>&1
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "jpackage not found"
+          }
+
+          Write-Host "=== where light.exe ==="
+          where.exe light.exe 2>&1
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "light.exe not found"
+          }
+
+          Write-Host "=== PATH ==="
+          $env:Path -split ';' | ForEach-Object { Write-Host $_ }
+
       - name: Build MSI installer
         shell: powershell
-        run: mvn --batch-mode --no-transfer-progress clean verify -Pjpackage-msi
+        run: |
+          mvn --batch-mode --no-transfer-progress clean verify -Pjpackage-msi -e -X 2>&1 | Tee-Object -FilePath build.log
+          $mavenExitCode = $LASTEXITCODE
+
+          if (Test-Path target\jpackage) {
+            Write-Host "=== target\jpackage contents ==="
+            Get-ChildItem -Path target\jpackage -Recurse | ForEach-Object { Write-Host $_.FullName }
+          } else {
+            Write-Host "target\jpackage does not exist after build"
+          }
+
+          exit $mavenExitCode
+
+      - name: Upload build log and jpackage directory
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: msi-build-logs
+          path: |
+            build.log
+            target/jpackage
+          if-no-files-found: ignore
 
       - name: Locate MSI artifact
         id: artifact
         shell: powershell
         run: |
-          $msi = Get-ChildItem -Path target\jpackage -Filter *.msi -File | Select-Object -First 1
+          $msi = Get-ChildItem -Path target\jpackage -Filter *.msi -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $msi) {
+            Write-Host "No MSI artifact was produced under target\jpackage. Listing target directory:"
+            Get-ChildItem -Path target -Recurse -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_.FullName }
             throw "No MSI artifact was produced under target\jpackage."
           }
           "path=$($msi.FullName)" >> $env:GITHUB_OUTPUT
