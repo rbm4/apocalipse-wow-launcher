@@ -9,11 +9,13 @@ final class LauncherDefaults {
 
     private final String manifestUrl;
     private final String realmStatusUrl;
+    private final String newsUrl;
     private final String wowExecutable;
 
-    private LauncherDefaults(String manifestUrl, String realmStatusUrl, String wowExecutable) {
+    private LauncherDefaults(String manifestUrl, String realmStatusUrl, String newsUrl, String wowExecutable) {
         this.manifestUrl = manifestUrl;
         this.realmStatusUrl = realmStatusUrl;
+        this.newsUrl = newsUrl;
         this.wowExecutable = wowExecutable;
     }
 
@@ -29,6 +31,7 @@ final class LauncherDefaults {
         return new LauncherDefaults(
                 properties.getProperty("manifest.url", "https://wow.apocalipse.cloud/patches/manifest.json"),
                 properties.getProperty("realm.status.url", "https://wow.apocalipse.cloud/api/realm-status"),
+                properties.getProperty("news.url", "https://wow.apocalipse.cloud/api/news/latest"),
                 properties.getProperty("wow.executable", "Wow.exe")
         );
     }
@@ -39,6 +42,10 @@ final class LauncherDefaults {
 
     String realmStatusUrl() {
         return realmStatusUrl;
+    }
+
+    String newsUrl() {
+        return newsUrl;
     }
 
     String wowExecutable() {

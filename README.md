@@ -60,6 +60,18 @@ Unsigned installers work, but Windows SmartScreen may warn users that the publis
 If installer builds fail with `Can not find WiX tools`, install WiX Toolset and make sure `wix.exe`
 or WiX v3 `candle.exe`/`light.exe` are on `PATH`. The `jpackage-app-image` profile does not need WiX.
 
+## Release Workflow
+
+Every push to `master` runs `.github/workflows/release-msi.yml` on a Windows GitHub Actions runner.
+The workflow installs JDK 25 and WiX Toolset, builds the installer with:
+
+```powershell
+mvn --batch-mode --no-transfer-progress clean verify -Pjpackage-msi
+```
+
+It then creates a fresh release tag in the format `launcher-v<project.version>-<run_number>` and
+publishes the generated `.msi` as the repository's latest GitHub release.
+
 ## Current Launcher Flow
 
 1. Select the WoW 3.3.5a folder.

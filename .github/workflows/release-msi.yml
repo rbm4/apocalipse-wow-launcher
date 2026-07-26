@@ -1,0 +1,79 @@
+name: Build and Publish MSI
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: latest-msi-release
+  cancel-in-progress: false
+
+jobs:
+  build-and-release:
+    name: Build Windows MSI
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+
+      - name: Install WiX Toolset
+        shell: powershell
+        run: |
+          choco install wixtoolset -y --no-progress
+          $wixRoot = Get-ChildItem -Path "${env:ProgramFiles(x86)}" -Directory -Filter "WiX Toolset v*" |
+            Sort-Object -Property Name -Descending |
+            Select-Object -First 1
+          if (-not $wixRoot) {
+            throw "WiX Toolset installation directory was not found."
+          }
+          $wixBin = Join-Path $wixRoot.FullName "bin"
+          Add-Content -Path $env:GITHUB_PATH -Value $wixBin
+
+      - name: Read Maven project version
+        id: version
+        shell: powershell
+        run: |
+          $version = mvn help:evaluate -Dexpression=project.version -q -DforceStdout
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Build MSI installer
+        shell: powershell
+        run: mvn --batch-mode --no-transfer-progress clean verify -Pjpackage-msi
+
+      - name: Locate MSI artifact
+        id: artifact
+        shell: powershell
+        run: |
+          $msi = Get-ChildItem -Path target\jpackage -Filter *.msi -File | Select-Object -First 1
+          if (-not $msi) {
+            throw "No MSI artifact was produced under target\jpackage."
+          }
+          "path=$($msi.FullName)" >> $env:GITHUB_OUTPUT
+          "name=$($msi.Name)" >> $env:GITHUB_OUTPUT
+
+      - name: Publish latest GitHub release
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: launcher-v${{ steps.version.outputs.version }}-${{ github.run_number }}
+          MSI_PATH: ${{ steps.artifact.outputs.path }}
+          MSI_NAME: ${{ steps.artifact.outputs.name }}
+        run: |
+          gh release create "$env:TAG_NAME" "$env:MSI_PATH" `
+            --title "Apocalipse WoW Launcher $env:TAG_NAME" `
+            --notes "Automated Windows MSI build from commit $env:GITHUB_SHA. Artifact: $env:MSI_NAME" `
+            --target "$env:GITHUB_SHA" `
+            --latest

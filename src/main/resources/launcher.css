@@ -125,6 +125,10 @@
     -fx-background-color: rgba(8, 11, 16, 0.18);
 }
 
+.web-view {
+    -fx-background-color: #080b10;
+}
+
 .banner {
     -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.58), 22, 0.28, 0, 6);
 }
@@ -374,13 +378,23 @@
 
 .news-card {
     -fx-padding: 12px;
-    -fx-pref-height: 86px;
-    -fx-min-height: 86px;
-    -fx-max-height: 86px;
+    -fx-pref-height: 92px;
+    -fx-min-height: 92px;
+    -fx-max-height: 92px;
     -fx-background-color: rgba(16, 13, 17, 0.78);
     -fx-border-color: rgba(244, 210, 122, 0.22);
     -fx-border-radius: 8px;
     -fx-background-radius: 8px;
+    -fx-cursor: hand;
+}
+
+.news-card:hover {
+    -fx-background-color: rgba(28, 22, 27, 0.88);
+    -fx-border-color: rgba(244, 210, 122, 0.38);
+}
+
+.news-image {
+    -fx-background-radius: 6px;
 }
 
 .news-title {

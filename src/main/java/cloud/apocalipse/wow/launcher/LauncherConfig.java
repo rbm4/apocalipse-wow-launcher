@@ -12,6 +12,7 @@ final class LauncherConfig {
     private static final String WOW_DIR = "wow.dir";
     private static final String MANIFEST_URL = "manifest.url";
     private static final String LAUNCH_PROFILE = "launch.profile";
+    private static final String LANGUAGE = "language";
 
     private final Path configPath;
     private final LauncherDefaults defaults;
@@ -46,6 +47,14 @@ final class LauncherConfig {
 
     void setLaunchProfile(String launchProfile) {
         properties.setProperty(LAUNCH_PROFILE, launchProfile.trim());
+    }
+
+    String language() {
+        return properties.getProperty(LANGUAGE, "pt").trim();
+    }
+
+    void setLanguage(String language) {
+        properties.setProperty(LANGUAGE, language.trim());
     }
 
     void save() throws IOException {
