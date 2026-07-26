@@ -62,15 +62,24 @@ or WiX v3 `candle.exe`/`light.exe` are on `PATH`. The `jpackage-app-image` profi
 
 ## Release Workflow
 
-Every push to `master` runs `.github/workflows/release-msi.yml` on a Windows GitHub Actions runner.
-The workflow installs JDK 25 and WiX Toolset, builds the installer with:
+MSI packaging is done locally on Windows because `jpackage --type msi` depends on Windows tooling.
+Use the local release script to check dependencies, build the installer, and optionally publish a
+GitHub release:
 
 ```powershell
-mvn --batch-mode --no-transfer-progress clean verify -Pjpackage-msi
+.\build-local-msi.ps1
 ```
 
-It then creates a fresh release tag in the format `launcher-v<project.version>-<run_number>` and
-publishes the generated `.msi` as the repository's latest GitHub release.
+For the full interactive release flow:
+
+```powershell
+.\build-local-msi.ps1 -Release
+```
+
+The script can prompt to install missing local dependencies with Chocolatey or winget, prompt to bump
+`pom.xml`, build the MSI, create a `launcher-v<project.version>` tag/release with GitHub CLI, and
+upload the generated `.msi` as a release asset. Local release outputs are written to `.local-release/`,
+which is ignored by Git.
 
 ## Current Launcher Flow
 
