@@ -91,11 +91,11 @@
 }
 
 .main-tabs > .tab-header-area {
-    -fx-padding: 16px 22px 0 22px;
+    -fx-padding: 14px 22px 0 22px;
 }
 
 .main-tabs > .tab-header-area > .tab-header-background {
-    -fx-background-color: rgba(24, 18, 25, 0.78);
+    -fx-background-color: rgba(24, 18, 25, 0.42);
     -fx-background-radius: 8px;
     -fx-border-color: rgba(244, 210, 122, 0.18);
     -fx-border-radius: 8px;
@@ -122,7 +122,7 @@
 }
 
 .home-page {
-    -fx-background-color: rgba(8, 11, 16, 0.34);
+    -fx-background-color: rgba(8, 11, 16, 0.18);
 }
 
 .banner {
@@ -130,13 +130,13 @@
 }
 
 .hero-panel {
-    -fx-padding: 18px;
+    -fx-padding: 14px 16px;
     -fx-background-color: rgba(12, 10, 12, 0.30);
     -fx-background-radius: 8px;
 }
 
 .glass-panel {
-    -fx-padding: 14px;
+    -fx-padding: 12px;
     -fx-background-color: rgba(16, 13, 17, 0.76);
     -fx-border-color: rgba(244, 210, 122, 0.23);
     -fx-border-radius: 8px;
@@ -373,7 +373,10 @@
 }
 
 .news-card {
-    -fx-padding: 14px;
+    -fx-padding: 12px;
+    -fx-pref-height: 86px;
+    -fx-min-height: 86px;
+    -fx-max-height: 86px;
     -fx-background-color: rgba(16, 13, 17, 0.78);
     -fx-border-color: rgba(244, 210, 122, 0.22);
     -fx-border-radius: 8px;

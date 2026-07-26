@@ -8,6 +8,7 @@ import javafx.beans.binding.Bindings;
 import javafx.concurrent.Task;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.geometry.Rectangle2D;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
@@ -22,6 +23,7 @@ import javafx.scene.control.TextArea;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.input.MouseButton;
+import javafx.scene.layout.AnchorPane;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
@@ -33,6 +35,7 @@ import javafx.scene.shape.Circle;
 import javafx.scene.shape.Line;
 import javafx.scene.shape.Rectangle;
 import javafx.stage.DirectoryChooser;
+import javafx.stage.Screen;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
 
@@ -68,8 +71,13 @@ public final class LauncherApp extends Application {
     private Timeline realmStatusTimeline;
     private double dragOffsetX;
     private double dragOffsetY;
+    private double restoreX;
+    private double restoreY;
+    private double restoreWidth;
+    private double restoreHeight;
     private boolean patchVerified;
     private boolean launchAfterSync;
+    private boolean manuallyMaximized;
 
     @Override
     public void start(Stage stage) {
@@ -103,7 +111,7 @@ public final class LauncherApp extends Application {
         logArea.setPrefHeight(88);
         logArea.setMaxHeight(88);
         logArea.setVisible(false);
-        logArea.setManaged(true);
+        logArea.setManaged(false);
         logArea.getStyleClass().add("details-log");
 
         detailsLink = new Hyperlink("See details");
@@ -125,14 +133,15 @@ public final class LauncherApp extends Application {
         tabs.getTabs().add(new Tab("Apocalipse WoW", homeContent()));
         tabs.getTabs().add(new Tab("Options", optionsContent(stage)));
 
+        StackPane tabSurface = tabSurface();
         BorderPane root = new BorderPane();
         root.setTop(titleBar(stage));
-        root.setCenter(tabs);
+        root.setCenter(tabSurface);
         root.getStyleClass().add("root-shell");
 
         Scene scene = new Scene(root, 1200, 760);
         scene.getStylesheets().add(getClass().getResource("/launcher.css").toExternalForm());
-        stage.setTitle("Apocalipse WoW Launcher");
+        stage.setTitle("Apocalipse [BR] Launcher");
         stage.getIcons().add(new Image(getClass().getResourceAsStream("/Apocalipse_wow_icon.png")));
         stage.setScene(scene);
         stage.setMinWidth(1080);
@@ -158,7 +167,7 @@ public final class LauncherApp extends Application {
         Button minimize = windowButton(minimizeIcon());
         minimize.setOnAction(event -> stage.setIconified(true));
         Button maximize = windowButton(maximizeIcon());
-        maximize.setOnAction(event -> stage.setMaximized(!stage.isMaximized()));
+        maximize.setOnAction(event -> toggleMaximize(stage));
         Button close = windowButton(closeIcon());
         close.getStyleClass().add("close-button");
         close.setOnAction(event -> stage.close());
@@ -171,17 +180,74 @@ public final class LauncherApp extends Application {
             dragOffsetY = event.getSceneY();
         });
         bar.setOnMouseDragged(event -> {
-            if (!stage.isMaximized()) {
+            if (!manuallyMaximized) {
                 stage.setX(event.getScreenX() - dragOffsetX);
                 stage.setY(event.getScreenY() - dragOffsetY);
             }
         });
         bar.setOnMouseClicked(event -> {
             if (event.getButton() == MouseButton.PRIMARY && event.getClickCount() == 2) {
-                stage.setMaximized(!stage.isMaximized());
+                toggleMaximize(stage);
             }
         });
         return bar;
+    }
+
+    private void toggleMaximize(Stage stage) {
+        if (manuallyMaximized) {
+            stage.setX(restoreX);
+            stage.setY(restoreY);
+            stage.setWidth(restoreWidth);
+            stage.setHeight(restoreHeight);
+            manuallyMaximized = false;
+            return;
+        }
+
+        restoreX = stage.getX();
+        restoreY = stage.getY();
+        restoreWidth = stage.getWidth();
+        restoreHeight = stage.getHeight();
+
+        Rectangle2D bounds = currentScreenBounds(stage);
+        stage.setX(bounds.getMinX());
+        stage.setY(bounds.getMinY());
+        stage.setWidth(bounds.getWidth());
+        stage.setHeight(bounds.getHeight());
+        manuallyMaximized = true;
+    }
+
+    private Rectangle2D currentScreenBounds(Stage stage) {
+        double centerX = stage.getX() + stage.getWidth() / 2;
+        double centerY = stage.getY() + stage.getHeight() / 2;
+        return Screen.getScreensForRectangle(centerX, centerY, 1, 1).stream()
+                .findFirst()
+                .orElse(Screen.getPrimary())
+                .getVisualBounds();
+    }
+
+    private StackPane tabSurface() {
+        Image backgroundImage = new Image(getClass().getResourceAsStream("/Background.png"));
+        ImageView background = new ImageView(backgroundImage);
+        background.setManaged(false);
+        background.setMouseTransparent(true);
+        background.setPreserveRatio(false);
+        background.setSmooth(true);
+        background.setOpacity(0.50);
+        background.getStyleClass().add("banner");
+
+        StackPane surface = new StackPane(background, tabs);
+        background.fitWidthProperty().bind(Bindings.createDoubleBinding(
+                () -> coverWidth(surface.getWidth(), surface.getHeight(), backgroundImage),
+                surface.widthProperty(), surface.heightProperty(), backgroundImage.widthProperty(), backgroundImage.heightProperty()));
+        background.fitHeightProperty().bind(Bindings.createDoubleBinding(
+                () -> coverHeight(surface.getWidth(), surface.getHeight(), backgroundImage),
+                surface.widthProperty(), surface.heightProperty(), backgroundImage.widthProperty(), backgroundImage.heightProperty()));
+
+        Rectangle clip = new Rectangle();
+        clip.widthProperty().bind(surface.widthProperty());
+        clip.heightProperty().bind(surface.heightProperty());
+        surface.setClip(clip);
+        return surface;
     }
 
     private Button windowButton(Region icon) {
@@ -214,20 +280,7 @@ public final class LauncherApp extends Application {
         return icon;
     }
 
-    private StackPane homeContent() {
-        Image bannerImage = new Image(getClass().getResourceAsStream("/Background.png"));
-        ImageView banner = new ImageView(bannerImage);
-        banner.setPreserveRatio(false);
-        banner.setSmooth(true);
-        banner.setOpacity(0.50);
-        banner.fitWidthProperty().bind(Bindings.createDoubleBinding(
-                () -> coverWidth(tabs.getWidth(), tabs.getHeight(), bannerImage),
-                tabs.widthProperty(), tabs.heightProperty(), bannerImage.widthProperty(), bannerImage.heightProperty()));
-        banner.fitHeightProperty().bind(Bindings.createDoubleBinding(
-                () -> coverHeight(tabs.getWidth(), tabs.getHeight(), bannerImage),
-                tabs.widthProperty(), tabs.heightProperty(), bannerImage.widthProperty(), bannerImage.heightProperty()));
-        banner.getStyleClass().add("banner");
-
+    private AnchorPane homeContent() {
         Label title = new Label("Apocalipse WoW");
         title.getStyleClass().add("hero-title");
         Label subtitle = new Label("Patch, verify, and enter Azeroth through the Apocalipse realm.");
@@ -240,18 +293,17 @@ public final class LauncherApp extends Application {
         HBox.setHgrow(heroText, Priority.ALWAYS);
         hero.getStyleClass().add("hero-panel");
 
-        Region bottomSpacer = new Region();
-        VBox.setVgrow(bottomSpacer, Priority.ALWAYS);
-        VBox bottomContent = new VBox(18, newsSection(), progressBlock());
+        VBox bottomContent = new VBox(12, newsSection(), progressBlock());
         bottomContent.getStyleClass().add("bottom-content");
+        bottomContent.setMaxWidth(Double.MAX_VALUE);
 
-        VBox content = new VBox(18, hero, bottomSpacer, bottomContent);
-        content.setPadding(new Insets(22));
-        StackPane page = new StackPane(banner, content);
-        Rectangle clip = new Rectangle();
-        clip.widthProperty().bind(page.widthProperty());
-        clip.heightProperty().bind(page.heightProperty());
-        page.setClip(clip);
+        AnchorPane page = new AnchorPane(hero, bottomContent);
+        AnchorPane.setTopAnchor(hero, 22.0);
+        AnchorPane.setLeftAnchor(hero, 22.0);
+        AnchorPane.setRightAnchor(hero, 22.0);
+        AnchorPane.setLeftAnchor(bottomContent, 22.0);
+        AnchorPane.setRightAnchor(bottomContent, 22.0);
+        AnchorPane.setBottomAnchor(bottomContent, 22.0);
         page.getStyleClass().add("home-page");
         return page;
     }
@@ -336,6 +388,7 @@ public final class LauncherApp extends Application {
     private VBox progressBlock() {
         VBox box = new VBox(8, statusLabel, progressBar, detailsLink, logArea);
         box.getStyleClass().add("glass-panel");
+        box.setMaxWidth(Double.MAX_VALUE);
         VBox.setVgrow(progressBar, Priority.NEVER);
         return box;
     }
@@ -343,13 +396,23 @@ public final class LauncherApp extends Application {
     private VBox newsSection() {
         Label header = new Label("Latest News");
         header.getStyleClass().add("section-title");
+        VBox firstCard = newsCard("Client Patching Online", "Launcher-managed MPQ updates are now being validated.");
+        VBox secondCard = newsCard("Random Battlegrounds", "Client UI patching moved to the bundled ApocalipsePVP AddOn.");
+        VBox thirdCard = newsCard("Coming Next", "Website news integration will feed this panel soon.");
         HBox cards = new HBox(14,
-                newsCard("Client Patching Online", "Launcher-managed MPQ updates are now being validated."),
-                newsCard("Random Battlegrounds", "Client UI patching moved to the bundled ApocalipsePVP AddOn."),
-                newsCard("Coming Next", "Website news integration will feed this panel soon.")
+                firstCard,
+                secondCard,
+                thirdCard
         );
+        cards.setFillHeight(false);
         cards.setAlignment(Pos.CENTER_LEFT);
-        return new VBox(10, header, cards);
+        cards.setMaxWidth(Double.MAX_VALUE);
+        firstCard.prefWidthProperty().bind(cards.widthProperty().subtract(28).divide(3));
+        secondCard.prefWidthProperty().bind(cards.widthProperty().subtract(28).divide(3));
+        thirdCard.prefWidthProperty().bind(cards.widthProperty().subtract(28).divide(3));
+        VBox section = new VBox(10, header, cards);
+        section.setMaxWidth(Double.MAX_VALUE);
+        return section;
     }
 
     private VBox newsCard(String title, String body) {
@@ -359,8 +422,12 @@ public final class LauncherApp extends Application {
         bodyLabel.setWrapText(true);
         bodyLabel.getStyleClass().add("news-body");
         VBox card = new VBox(8, titleLabel, bodyLabel);
-        card.setPrefWidth(320);
-        card.setMinHeight(120);
+        card.setMaxWidth(Double.MAX_VALUE);
+        card.setMinWidth(0);
+        card.setMinHeight(86);
+        card.setPrefHeight(86);
+        card.setMaxHeight(86);
+        HBox.setHgrow(card, Priority.ALWAYS);
         card.getStyleClass().add("news-card");
         return card;
     }
@@ -613,6 +680,7 @@ public final class LauncherApp extends Application {
     private void toggleDetails() {
         boolean show = !logArea.isVisible();
         logArea.setVisible(show);
+        logArea.setManaged(show);
         detailsLink.setText(show ? "Hide details" : "See details");
     }
 
