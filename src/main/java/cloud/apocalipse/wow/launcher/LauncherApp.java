@@ -1,64 +1,94 @@
 package cloud.apocalipse.wow.launcher;
 
+import javafx.animation.KeyFrame;
+import javafx.animation.Timeline;
 import javafx.application.Application;
 import javafx.application.Platform;
+import javafx.beans.binding.Bindings;
 import javafx.concurrent.Task;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
+import javafx.scene.control.ComboBox;
 import javafx.scene.control.Hyperlink;
 import javafx.scene.control.Label;
+import javafx.scene.control.MenuButton;
+import javafx.scene.control.MenuItem;
 import javafx.scene.control.ProgressBar;
+import javafx.scene.control.Tab;
+import javafx.scene.control.TabPane;
 import javafx.scene.control.TextArea;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
+import javafx.scene.input.MouseButton;
 import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.scene.shape.Circle;
+import javafx.scene.shape.Line;
+import javafx.scene.shape.Rectangle;
 import javafx.stage.DirectoryChooser;
 import javafx.stage.Stage;
+import javafx.stage.StageStyle;
 
 import java.io.File;
 import java.nio.file.Path;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 
 public final class LauncherApp extends Application {
     private final LauncherDefaults defaults = LauncherDefaults.load();
     private final LauncherConfig config = new LauncherConfig(defaults);
     private final PatchManager patchManager = new PatchManager();
     private final GameLauncher gameLauncher = new GameLauncher(defaults.wowExecutable());
+    private final RealmStatusClient realmStatusClient = new RealmStatusClient();
 
     private Label wowPathLabel;
     private ProgressBar progressBar;
     private Label statusLabel;
+    private Label realmNameLabel;
+    private Label realmStatusLabel;
+    private Label playersOnlineLabel;
+    private Label totalAccountsLabel;
+    private Label realmUpdatedLabel;
+    private Circle realmStatusDot;
     private TextArea logArea;
     private Hyperlink detailsLink;
-    private Button patchButton;
-    private Button launchButton;
-    private Button optionsButton;
+    private Button updateAndPlayButton;
+    private MenuButton launchOptionsButton;
+    private Button browseButton;
+    private ComboBox<LaunchProfile> launchProfileCombo;
+    private TabPane tabs;
+    private Timeline realmStatusTimeline;
+    private double dragOffsetX;
+    private double dragOffsetY;
     private boolean patchVerified;
+    private boolean launchAfterSync;
 
     @Override
     public void start(Stage stage) {
+        stage.initStyle(StageStyle.UNDECORATED);
         wowPathLabel = new Label();
         refreshWowPathLabel();
 
-        optionsButton = new Button("Options");
-        optionsButton.getStyleClass().add("secondary-button");
-        optionsButton.setOnAction(event -> chooseWowFolder(stage));
+        browseButton = new Button("Choose folder");
+        browseButton.getStyleClass().add("secondary-button");
+        browseButton.setOnAction(event -> chooseWowFolder(stage));
 
-        patchButton = new Button("Check and Patch");
-        patchButton.setDefaultButton(true);
-        patchButton.setOnAction(event -> synchronize());
+        updateAndPlayButton = new Button("Update & Play");
+        updateAndPlayButton.setDefaultButton(true);
+        updateAndPlayButton.getStyleClass().add("update-button");
+        updateAndPlayButton.setOnAction(event -> synchronize(true));
 
-        launchButton = new Button("Launch WoW");
-        launchButton.getStyleClass().add("primary-button");
-        launchButton.setDisable(true);
-        launchButton.setOnAction(event -> launchGame());
+        launchOptionsButton = new MenuButton("Launch options");
+        launchOptionsButton.getStyleClass().add("launch-options-button");
+        configureLaunchOptionsMenu();
 
         progressBar = new ProgressBar(0);
         progressBar.setMaxWidth(Double.MAX_VALUE);
@@ -68,79 +98,322 @@ public final class LauncherApp extends Application {
         logArea = new TextArea();
         logArea.setEditable(false);
         logArea.setWrapText(true);
-        logArea.setPrefRowCount(12);
+        logArea.setPrefRowCount(5);
+        logArea.setMinHeight(88);
+        logArea.setPrefHeight(88);
+        logArea.setMaxHeight(88);
         logArea.setVisible(false);
-        logArea.setManaged(false);
+        logArea.setManaged(true);
+        logArea.getStyleClass().add("details-log");
 
         detailsLink = new Hyperlink("See details");
         detailsLink.setPadding(Insets.EMPTY);
         detailsLink.setOnAction(event -> toggleDetails());
 
-        VBox root = new VBox(16);
-        root.getStyleClass().add("root-shell");
-        root.getChildren().addAll(
-                heroBlock(),
-                folderStatusRow(),
-                actions(),
-                progressBlock(),
-                logArea
-        );
-        VBox.setVgrow(logArea, Priority.ALWAYS);
+        launchProfileCombo = new ComboBox<>();
+        launchProfileCombo.getItems().addAll(LaunchProfile.values());
+        launchProfileCombo.setValue(LaunchProfile.fromId(config.launchProfile()));
+        launchProfileCombo.setOnAction(event -> {
+            config.setLaunchProfile(launchProfileCombo.getValue().id());
+            saveConfig();
+            configureLaunchOptionsMenu();
+        });
 
-        BorderPane shell = new BorderPane(root);
-        Scene scene = new Scene(shell, 820, 560);
+        tabs = new TabPane();
+        tabs.getStyleClass().add("main-tabs");
+        tabs.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
+        tabs.getTabs().add(new Tab("Apocalipse WoW", homeContent()));
+        tabs.getTabs().add(new Tab("Options", optionsContent(stage)));
+
+        BorderPane root = new BorderPane();
+        root.setTop(titleBar(stage));
+        root.setCenter(tabs);
+        root.getStyleClass().add("root-shell");
+
+        Scene scene = new Scene(root, 1200, 760);
         scene.getStylesheets().add(getClass().getResource("/launcher.css").toExternalForm());
         stage.setTitle("Apocalipse WoW Launcher");
         stage.getIcons().add(new Image(getClass().getResourceAsStream("/Apocalipse_wow_icon.png")));
         stage.setScene(scene);
-        stage.setMinWidth(760);
-        stage.setMinHeight(500);
+        stage.setMinWidth(1080);
+        stage.setMinHeight(680);
         stage.show();
 
         log("Launcher ready.");
+        startRealmStatusRefresh();
         if (config.wowDirectory().isEmpty()) {
-            Platform.runLater(() -> chooseWowFolder(stage));
+            Platform.runLater(() -> {
+                tabs.getSelectionModel().select(1);
+                chooseWowFolder(stage);
+            });
         }
     }
 
-    private VBox heroBlock() {
-        ImageView banner = new ImageView(new Image(getClass().getResourceAsStream("/Banner.png")));
-        banner.setPreserveRatio(true);
-        banner.setFitHeight(230);
+    private HBox titleBar(Stage stage) {
+        Label title = new Label("Apocalipse WoW Launcher");
+        title.getStyleClass().add("window-title");
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+
+        Button minimize = windowButton(minimizeIcon());
+        minimize.setOnAction(event -> stage.setIconified(true));
+        Button maximize = windowButton(maximizeIcon());
+        maximize.setOnAction(event -> stage.setMaximized(!stage.isMaximized()));
+        Button close = windowButton(closeIcon());
+        close.getStyleClass().add("close-button");
+        close.setOnAction(event -> stage.close());
+
+        HBox bar = new HBox(8, title, spacer, minimize, maximize, close);
+        bar.setAlignment(Pos.CENTER_LEFT);
+        bar.getStyleClass().add("title-bar");
+        bar.setOnMousePressed(event -> {
+            dragOffsetX = event.getSceneX();
+            dragOffsetY = event.getSceneY();
+        });
+        bar.setOnMouseDragged(event -> {
+            if (!stage.isMaximized()) {
+                stage.setX(event.getScreenX() - dragOffsetX);
+                stage.setY(event.getScreenY() - dragOffsetY);
+            }
+        });
+        bar.setOnMouseClicked(event -> {
+            if (event.getButton() == MouseButton.PRIMARY && event.getClickCount() == 2) {
+                stage.setMaximized(!stage.isMaximized());
+            }
+        });
+        return bar;
+    }
+
+    private Button windowButton(Region icon) {
+        Button button = new Button();
+        button.setGraphic(icon);
+        button.getStyleClass().add("window-button");
+        button.setFocusTraversable(false);
+        return button;
+    }
+
+    private Region minimizeIcon() {
+        Region icon = new Region();
+        icon.getStyleClass().addAll("window-icon", "minimize-icon");
+        return icon;
+    }
+
+    private Region maximizeIcon() {
+        Region icon = new Region();
+        icon.getStyleClass().addAll("window-icon", "maximize-icon");
+        return icon;
+    }
+
+    private Region closeIcon() {
+        Line first = new Line(0, 0, 11, 11);
+        Line second = new Line(11, 0, 0, 11);
+        first.getStyleClass().add("close-icon-line");
+        second.getStyleClass().add("close-icon-line");
+        StackPane icon = new StackPane(first, second);
+        icon.getStyleClass().add("window-icon");
+        return icon;
+    }
+
+    private StackPane homeContent() {
+        Image bannerImage = new Image(getClass().getResourceAsStream("/Background.png"));
+        ImageView banner = new ImageView(bannerImage);
+        banner.setPreserveRatio(false);
         banner.setSmooth(true);
+        banner.setOpacity(0.50);
+        banner.fitWidthProperty().bind(Bindings.createDoubleBinding(
+                () -> coverWidth(tabs.getWidth(), tabs.getHeight(), bannerImage),
+                tabs.widthProperty(), tabs.heightProperty(), bannerImage.widthProperty(), bannerImage.heightProperty()));
+        banner.fitHeightProperty().bind(Bindings.createDoubleBinding(
+                () -> coverHeight(tabs.getWidth(), tabs.getHeight(), bannerImage),
+                tabs.widthProperty(), tabs.heightProperty(), bannerImage.widthProperty(), bannerImage.heightProperty()));
         banner.getStyleClass().add("banner");
 
         Label title = new Label("Apocalipse WoW");
-        title.getStyleClass().add("title");
-        Label subtitle = new Label("Keep your 3.3.5a client ready for Azeroth.");
-        subtitle.getStyleClass().add("subtitle");
-        VBox box = new VBox(10, banner, title, subtitle);
-        box.setAlignment(Pos.CENTER_LEFT);
-        return box;
+        title.getStyleClass().add("hero-title");
+        Label subtitle = new Label("Patch, verify, and enter Azeroth through the Apocalipse realm.");
+        subtitle.getStyleClass().add("hero-subtitle");
+
+        VBox heroText = new VBox(8, title, subtitle, actionRow(), releaseBadge());
+        heroText.setAlignment(Pos.CENTER_LEFT);
+        HBox hero = new HBox(24, heroText, sidePanel());
+        hero.setAlignment(Pos.CENTER_LEFT);
+        HBox.setHgrow(heroText, Priority.ALWAYS);
+        hero.getStyleClass().add("hero-panel");
+
+        Region bottomSpacer = new Region();
+        VBox.setVgrow(bottomSpacer, Priority.ALWAYS);
+        VBox bottomContent = new VBox(18, newsSection(), progressBlock());
+        bottomContent.getStyleClass().add("bottom-content");
+
+        VBox content = new VBox(18, hero, bottomSpacer, bottomContent);
+        content.setPadding(new Insets(22));
+        StackPane page = new StackPane(banner, content);
+        Rectangle clip = new Rectangle();
+        clip.widthProperty().bind(page.widthProperty());
+        clip.heightProperty().bind(page.heightProperty());
+        page.setClip(clip);
+        page.getStyleClass().add("home-page");
+        return page;
     }
 
-    private HBox folderStatusRow() {
-        Label label = new Label("Game folder");
-        label.getStyleClass().add("section-label");
-        Region spacer = new Region();
-        HBox.setHgrow(spacer, Priority.ALWAYS);
-        HBox row = new HBox(12, label, wowPathLabel, spacer, optionsButton);
+    private double coverWidth(double containerWidth, double containerHeight, Image image) {
+        double imageWidth = image.getWidth();
+        double imageHeight = image.getHeight();
+        if (containerWidth <= 0 || containerHeight <= 0 || imageWidth <= 0 || imageHeight <= 0) {
+            return containerWidth;
+        }
+        double scale = Math.max(containerWidth / imageWidth, containerHeight / imageHeight);
+        return imageWidth * scale;
+    }
+
+    private double coverHeight(double containerWidth, double containerHeight, Image image) {
+        double imageWidth = image.getWidth();
+        double imageHeight = image.getHeight();
+        if (containerWidth <= 0 || containerHeight <= 0 || imageWidth <= 0 || imageHeight <= 0) {
+            return containerHeight;
+        }
+        double scale = Math.max(containerWidth / imageWidth, containerHeight / imageHeight);
+        return imageHeight * scale;
+    }
+
+    private HBox actionRow() {
+        HBox row = new HBox(10, updateAndPlayButton, launchOptionsButton);
         row.setAlignment(Pos.CENTER_LEFT);
-        row.getStyleClass().add("panel");
         return row;
     }
 
-    private HBox actions() {
-        HBox row = new HBox(10, patchButton, launchButton);
-        row.setAlignment(Pos.CENTER_RIGHT);
+    private Label releaseBadge() {
+        Label badge = new Label("Season client patch managed by launcher");
+        badge.getStyleClass().add("release-badge");
+        return badge;
+    }
+
+    private VBox sidePanel() {
+        Label headline = new Label("Realm Status");
+        headline.getStyleClass().add("panel-title");
+
+        realmStatusDot = new Circle(5);
+        realmStatusDot.getStyleClass().addAll("realm-status-dot", "status-unknown");
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+        HBox header = new HBox(10, headline, spacer, realmStatusDot);
+        header.setAlignment(Pos.CENTER_LEFT);
+
+        realmNameLabel = new Label("Apocalipse");
+        realmNameLabel.getStyleClass().add("realm-name");
+        realmStatusLabel = new Label("Checking...");
+        realmStatusLabel.getStyleClass().addAll("realm-status-value", "status-unknown");
+        playersOnlineLabel = new Label("-");
+        playersOnlineLabel.getStyleClass().add("realm-stat-value");
+        totalAccountsLabel = new Label("-");
+        totalAccountsLabel.getStyleClass().add("realm-stat-value");
+        realmUpdatedLabel = new Label("Awaiting status");
+        realmUpdatedLabel.getStyleClass().add("muted");
+
+        VBox box = new VBox(10,
+                header,
+                realmNameLabel,
+                realmStatusRow("Status", realmStatusLabel),
+                realmStatusRow("Players online", playersOnlineLabel),
+                realmStatusRow("Registered accounts", totalAccountsLabel),
+                realmUpdatedLabel);
+        box.setMinWidth(270);
+        box.getStyleClass().add("glass-panel");
+        return box;
+    }
+
+    private HBox realmStatusRow(String label, Label value) {
+        Label title = new Label(label);
+        title.getStyleClass().add("realm-stat-label");
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+        HBox row = new HBox(10, title, spacer, value);
+        row.setAlignment(Pos.CENTER_LEFT);
+        row.getStyleClass().add("realm-status-row");
         return row;
     }
 
     private VBox progressBlock() {
-        VBox box = new VBox(8, statusLabel, progressBar, detailsLink);
-        box.getStyleClass().add("panel");
+        VBox box = new VBox(8, statusLabel, progressBar, detailsLink, logArea);
+        box.getStyleClass().add("glass-panel");
         VBox.setVgrow(progressBar, Priority.NEVER);
         return box;
+    }
+
+    private VBox newsSection() {
+        Label header = new Label("Latest News");
+        header.getStyleClass().add("section-title");
+        HBox cards = new HBox(14,
+                newsCard("Client Patching Online", "Launcher-managed MPQ updates are now being validated."),
+                newsCard("Random Battlegrounds", "Client UI patching moved to the bundled ApocalipsePVP AddOn."),
+                newsCard("Coming Next", "Website news integration will feed this panel soon.")
+        );
+        cards.setAlignment(Pos.CENTER_LEFT);
+        return new VBox(10, header, cards);
+    }
+
+    private VBox newsCard(String title, String body) {
+        Label titleLabel = new Label(title);
+        titleLabel.getStyleClass().add("news-title");
+        Label bodyLabel = new Label(body);
+        bodyLabel.setWrapText(true);
+        bodyLabel.getStyleClass().add("news-body");
+        VBox card = new VBox(8, titleLabel, bodyLabel);
+        card.setPrefWidth(320);
+        card.setMinHeight(120);
+        card.getStyleClass().add("news-card");
+        return card;
+    }
+
+    private VBox optionsContent(Stage stage) {
+        Label title = new Label("Options");
+        title.getStyleClass().add("hero-title");
+        Label description = new Label("Launcher configuration used before patching and starting the client.");
+        description.getStyleClass().add("hero-subtitle");
+
+        GridPane form = new GridPane();
+        form.setHgap(14);
+        form.setVgap(14);
+        form.getStyleClass().add("glass-panel");
+
+        Label folderLabel = new Label("Game directory");
+        folderLabel.getStyleClass().add("section-label");
+        Label launchLabel = new Label("Launch profile");
+        launchLabel.getStyleClass().add("section-label");
+
+        form.add(folderLabel, 0, 0);
+        form.add(wowPathLabel, 1, 0);
+        form.add(browseButton, 2, 0);
+        form.add(launchLabel, 0, 1);
+        form.add(launchProfileCombo, 1, 1);
+        GridPane.setHgrow(wowPathLabel, Priority.ALWAYS);
+        GridPane.setHgrow(launchProfileCombo, Priority.ALWAYS);
+
+        VBox content = new VBox(18, title, description, form);
+        content.setPadding(new Insets(22));
+        return content;
+    }
+
+    private void configureLaunchOptionsMenu() {
+        if (launchOptionsButton == null) {
+            return;
+        }
+        LaunchProfile selected = LaunchProfile.fromId(config.launchProfile());
+        launchOptionsButton.setText(selected.label());
+        launchOptionsButton.getItems().clear();
+        for (LaunchProfile profile : LaunchProfile.values()) {
+            MenuItem item = new MenuItem(profile.label());
+            item.setOnAction(event -> {
+                config.setLaunchProfile(profile.id());
+                if (launchProfileCombo != null) {
+                    launchProfileCombo.setValue(profile);
+                }
+                saveConfig();
+                launchOptionsButton.setText(profile.label());
+                log("Launch profile selected: " + profile.label());
+            });
+            launchOptionsButton.getItems().add(item);
+        }
     }
 
     private void chooseWowFolder(Stage stage) {
@@ -160,20 +433,21 @@ public final class LauncherApp extends Application {
         config.setWowDirectory(wowDirectory);
         refreshWowPathLabel();
         patchVerified = false;
-        launchButton.setDisable(true);
+        updateAndPlayButton.setText("Update & Play");
         saveConfig();
         log("Selected WoW folder: " + wowDirectory);
     }
 
-    private void synchronize() {
+    private void synchronize(boolean launchWhenDone) {
         Path wowDirectory = selectedWowDirectory();
         if (wowDirectory == null) {
+            tabs.getSelectionModel().select(1);
             log("Select your WoW folder first.");
             return;
         }
 
+        launchAfterSync = launchWhenDone;
         patchVerified = false;
-        launchButton.setDisable(true);
         setWorking(true);
         Task<PatchManifest> task = new Task<>() {
             @Override
@@ -201,6 +475,9 @@ public final class LauncherApp extends Application {
             progressBar.setProgress(1);
             patchVerified = true;
             setWorking(false);
+            if (launchAfterSync) {
+                launchGame();
+            }
         });
         task.setOnFailed(event -> {
             statusLabel.textProperty().unbind();
@@ -220,12 +497,14 @@ public final class LauncherApp extends Application {
     private void launchGame() {
         Path wowDirectory = selectedWowDirectory();
         if (wowDirectory == null) {
+            tabs.getSelectionModel().select(1);
             log("Select your WoW folder first.");
             return;
         }
         try {
-            gameLauncher.launch(wowDirectory);
-            log("Launching Wow.exe");
+            LaunchProfile profile = LaunchProfile.fromId(config.launchProfile());
+            gameLauncher.launch(wowDirectory, profile.arguments());
+            log("Launching Wow.exe with profile: " + profile.label());
         } catch (Exception exc) {
             log("Launch failed: " + exc.getMessage());
         }
@@ -233,6 +512,79 @@ public final class LauncherApp extends Application {
 
     private Path selectedWowDirectory() {
         return config.wowDirectory().orElse(null);
+    }
+
+    private void startRealmStatusRefresh() {
+        refreshRealmStatus();
+        realmStatusTimeline = new Timeline(new KeyFrame(javafx.util.Duration.seconds(30), event -> refreshRealmStatus()));
+        realmStatusTimeline.setCycleCount(Timeline.INDEFINITE);
+        realmStatusTimeline.play();
+    }
+
+    private void refreshRealmStatus() {
+        if (realmStatusLabel == null) {
+            return;
+        }
+        Task<RealmStatus> task = new Task<>() {
+            @Override
+            protected RealmStatus call() throws Exception {
+                return realmStatusClient.fetch(defaults.realmStatusUrl());
+            }
+        };
+        task.setOnSucceeded(event -> applyRealmStatus(task.getValue()));
+        task.setOnFailed(event -> {
+            RealmStatus fallback = new RealmStatus(
+                    "error",
+                    false,
+                    "Apocalipse",
+                    null,
+                    null,
+                    task.getException() == null ? "unknown error" : task.getException().getMessage()
+            );
+            applyRealmStatus(fallback);
+            log("Realm status unavailable: " + fallback.error());
+        });
+
+        Thread thread = new Thread(task, "realm-status-refresh");
+        thread.setDaemon(true);
+        thread.start();
+    }
+
+    private void applyRealmStatus(RealmStatus status) {
+        realmNameLabel.setText(blankFallback(status.realmName(), "Apocalipse"));
+        playersOnlineLabel.setText(numberFallback(status.playersOnline()));
+        totalAccountsLabel.setText(numberFallback(status.totalAccounts()));
+
+        String effectiveStatus = status.effectiveStatus();
+        setStatusClass(realmStatusDot, effectiveStatus);
+        setStatusClass(realmStatusLabel, effectiveStatus);
+
+        realmStatusLabel.setText(switch (effectiveStatus) {
+            case "online" -> "Online";
+            case "starting" -> "Starting";
+            case "offline" -> "Offline";
+            default -> "Unavailable";
+        });
+        realmUpdatedLabel.setText("Last check: " + LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss")));
+    }
+
+    private void setStatusClass(javafx.scene.Node node, String status) {
+        node.getStyleClass().removeAll("status-online", "status-starting", "status-offline", "status-error", "status-unknown");
+        node.getStyleClass().add(switch (status) {
+            case "online" -> "status-online";
+            case "starting" -> "status-starting";
+            case "offline" -> "status-offline";
+            case "error" -> "status-error";
+            default -> "status-unknown";
+        });
+    }
+
+    private String blankFallback(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value;
+    }
+
+    private String numberFallback(Integer value) {
+        return value == null ? "-" : value.toString();
     }
 
     private void saveConfig() {
@@ -244,9 +596,13 @@ public final class LauncherApp extends Application {
     }
 
     private void setWorking(boolean working) {
-        patchButton.setDisable(working);
-        launchButton.setDisable(working || !patchVerified);
-        optionsButton.setDisable(working);
+        updateAndPlayButton.setDisable(working);
+        updateAndPlayButton.setText(working ? "Updating..." : "Update & Play");
+        launchOptionsButton.setDisable(working);
+        browseButton.setDisable(working);
+        if (launchProfileCombo != null) {
+            launchProfileCombo.setDisable(working);
+        }
     }
 
     private void log(String message) {
@@ -257,7 +613,6 @@ public final class LauncherApp extends Application {
     private void toggleDetails() {
         boolean show = !logArea.isVisible();
         logArea.setVisible(show);
-        logArea.setManaged(show);
         detailsLink.setText(show ? "Hide details" : "See details");
     }
 
@@ -269,5 +624,50 @@ public final class LauncherApp extends Application {
 
     public static void main(String[] args) {
         launch(args);
+    }
+
+    private enum LaunchProfile {
+        DEFAULT("default", "Default", List.of()),
+        WINDOWED("windowed", "Windowed", List.of("-windowed")),
+        FULLSCREEN("fullscreen", "Fullscreen", List.of("-fullscreen")),
+        NO_SOUND("nosound", "No sound", List.of("-nosound")),
+        CONSOLE("console", "Console enabled", List.of("-console")),
+        WINDOWED_CONSOLE("windowed-console", "Windowed + console", List.of("-windowed", "-console"));
+
+        private final String id;
+        private final String label;
+        private final List<String> arguments;
+
+        LaunchProfile(String id, String label, List<String> arguments) {
+            this.id = id;
+            this.label = label;
+            this.arguments = arguments;
+        }
+
+        String id() {
+            return id;
+        }
+
+        String label() {
+            return label;
+        }
+
+        List<String> arguments() {
+            return arguments;
+        }
+
+        @Override
+        public String toString() {
+            return label;
+        }
+
+        static LaunchProfile fromId(String id) {
+            for (LaunchProfile profile : values()) {
+                if (profile.id.equals(id)) {
+                    return profile;
+                }
+            }
+            return DEFAULT;
+        }
     }
 }

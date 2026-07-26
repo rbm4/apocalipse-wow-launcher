@@ -11,6 +11,7 @@ import java.util.Properties;
 final class LauncherConfig {
     private static final String WOW_DIR = "wow.dir";
     private static final String MANIFEST_URL = "manifest.url";
+    private static final String LAUNCH_PROFILE = "launch.profile";
 
     private final Path configPath;
     private final LauncherDefaults defaults;
@@ -37,6 +38,14 @@ final class LauncherConfig {
 
     void setManifestUrl(String manifestUrl) {
         properties.setProperty(MANIFEST_URL, manifestUrl.trim());
+    }
+
+    String launchProfile() {
+        return properties.getProperty(LAUNCH_PROFILE, "default").trim();
+    }
+
+    void setLaunchProfile(String launchProfile) {
+        properties.setProperty(LAUNCH_PROFILE, launchProfile.trim());
     }
 
     void save() throws IOException {
