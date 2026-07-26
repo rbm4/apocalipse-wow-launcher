@@ -1,0 +1,18 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "mvn package",
+            "type": "shell",
+            "command": "mvn",
+            "args": [
+                "package"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "build",
+            "problemMatcher": "$javac"
+        }
+    ]
+}

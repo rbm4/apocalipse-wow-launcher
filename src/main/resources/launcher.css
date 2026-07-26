@@ -1,0 +1,113 @@
+.root {
+    -fx-font-family: "Segoe UI", Arial, sans-serif;
+    -fx-background-color: #080b10;
+}
+
+.root-shell {
+    -fx-padding: 22px;
+    -fx-background-color: linear-gradient(to bottom, #111827 0%, #080b10 100%);
+}
+
+.banner {
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.55), 18, 0.25, 0, 5);
+}
+
+.title {
+    -fx-font-size: 30px;
+    -fx-font-weight: 700;
+    -fx-text-fill: #f4d27a;
+}
+
+.subtitle {
+    -fx-font-size: 13px;
+    -fx-text-fill: #aeb8c8;
+}
+
+.section-label {
+    -fx-font-size: 12px;
+    -fx-font-weight: 700;
+    -fx-text-fill: #f4d27a;
+}
+
+.label {
+    -fx-text-fill: #dbe4f0;
+}
+
+.panel {
+    -fx-padding: 12px;
+    -fx-background-color: rgba(15, 23, 42, 0.86);
+    -fx-border-color: rgba(148, 163, 184, 0.22);
+    -fx-border-radius: 6px;
+    -fx-background-radius: 6px;
+}
+
+.button {
+    -fx-background-radius: 5px;
+    -fx-border-radius: 5px;
+    -fx-padding: 8px 14px;
+    -fx-font-weight: 700;
+    -fx-background-color: #263244;
+    -fx-text-fill: #f8fafc;
+    -fx-border-color: rgba(148, 163, 184, 0.28);
+}
+
+.button:hover {
+    -fx-background-color: #334155;
+}
+
+.button:disabled {
+    -fx-opacity: 0.45;
+}
+
+.primary-button,
+.button:default {
+    -fx-background-color: #b8892e;
+    -fx-text-fill: #101419;
+    -fx-border-color: #d5ad58;
+}
+
+.primary-button:hover,
+.button:default:hover {
+    -fx-background-color: #d5a13d;
+}
+
+.secondary-button {
+    -fx-background-color: transparent;
+    -fx-border-color: rgba(244, 210, 122, 0.45);
+    -fx-text-fill: #f4d27a;
+}
+
+.secondary-button:hover {
+    -fx-background-color: rgba(244, 210, 122, 0.10);
+}
+
+.progress-bar {
+    -fx-pref-height: 10px;
+}
+
+.progress-bar > .track {
+    -fx-background-color: #172033;
+    -fx-background-radius: 999px;
+}
+
+.progress-bar > .bar {
+    -fx-background-color: linear-gradient(to right, #b8892e, #f4d27a);
+    -fx-background-radius: 999px;
+}
+
+.hyperlink {
+    -fx-text-fill: #f4d27a;
+    -fx-border-color: transparent;
+    -fx-padding: 0;
+}
+
+.text-area {
+    -fx-control-inner-background: #0f172a;
+    -fx-background-color: #0f172a;
+    -fx-text-fill: #dbe4f0;
+    -fx-highlight-fill: #334155;
+    -fx-highlight-text-fill: #ffffff;
+    -fx-border-color: rgba(148, 163, 184, 0.22);
+    -fx-border-radius: 6px;
+    -fx-background-radius: 6px;
+}

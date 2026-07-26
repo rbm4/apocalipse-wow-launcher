@@ -1,0 +1,14 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "java",
+            "name": "LauncherApp",
+            "request": "launch",
+            "mainClass": "cloud.apocalipse.wow.launcher.LauncherApp",
+            "projectName": "apocalipse-wow-launcher",
+            "preLaunchTask": "mvn package",
+            "vmArgs": "--module-path \"${workspaceFolder}/target/launcher-input\" --add-modules javafx.controls"
+        }
+    ]
+}
