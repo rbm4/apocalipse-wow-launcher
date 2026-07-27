@@ -6,7 +6,7 @@
 
     <groupId>cloud.apocalipse</groupId>
     <artifactId>apocalipse-wow-launcher</artifactId>
-    <version>0.1.5</version>
+    <version>--version</version>
     <name>Apocalipse WoW Launcher</name>
 
     <properties>

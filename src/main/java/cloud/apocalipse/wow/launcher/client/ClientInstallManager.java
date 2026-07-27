@@ -18,6 +18,10 @@ public final class ClientInstallManager {
     private static final int WOW_EXE_SEARCH_DEPTH = 4;
     private static final long PROGRESS_EMIT_INTERVAL_NANOS = 1_000_000_000L;
     private static final int SPEED_BUCKET_BYTES_PER_SECOND = 64 * 1024;
+    private static final double DOWNLOAD_PHASE_WEIGHT = 0.94;
+    private static final double VERIFY_PHASE_START = 0.94;
+    private static final double VERIFY_WOW_EXE_FOUND = 0.97;
+    private static final double VERIFY_DATA_FOUND = 0.99;
 
     private final ClientInstallPaths paths;
     private final TorrentDownloadService torrentDownloadService;
@@ -89,14 +93,16 @@ public final class ClientInstallManager {
         }
 
         progress.message("Verifying client files...");
-        progress.progress(0.98);
+        progress.progress(VERIFY_PHASE_START);
         Path wowDirectory = findWowDirectory(destination);
         if (wowDirectory == null) {
             throw new IOException("Downloaded client does not contain Wow.exe in " + destination);
         }
+        progress.progress(VERIFY_WOW_EXE_FOUND);
         if (!Files.isDirectory(wowDirectory.resolve("Data"))) {
             throw new IOException("Downloaded client Data folder was not found in " + wowDirectory);
         }
+        progress.progress(VERIFY_DATA_FOUND);
         progress.message("Client download complete: " + wowDirectory);
         progress.progress(1);
         return wowDirectory;
@@ -104,7 +110,9 @@ public final class ClientInstallManager {
 
     public void cancelInstall() {
         cancelRequested = true;
-        torrentDownloadService.stop();
+        Thread thread = new Thread(torrentDownloadService::stop, "client-download-cancel");
+        thread.setDaemon(true);
+        thread.start();
     }
 
     public void startWarmup(PatchProgress progress) throws IOException {
@@ -160,17 +168,17 @@ public final class ClientInstallManager {
         String message = switch (torrentProgress.state()) {
             case STARTING -> "Starting client download...";
             case DOWNLOADING -> torrentProgress.progress() <= 0
-                    ? "Download initializing..."
-                    : "Downloading client... " + formatPercent(torrentProgress.progress())
-                    + " at " + formatRate(torrentProgress.downloadRateBytesPerSecond());
+                    ? initializingMessage(torrentProgress)
+                    : "Downloading client... " + formatPercent(displayProgress(torrentProgress))
+                    + " at " + formatRate(visibleDownloadRate(torrentProgress));
             case VERIFYING -> "Verifying client download...";
             case COMPLETE -> "Client torrent download complete.";
         };
-        double scaledProgress = Math.max(0, Math.min(0.97, torrentProgress.progress() * 0.97));
+        double scaledProgress = Math.max(0, Math.min(DOWNLOAD_PHASE_WEIGHT, displayProgress(torrentProgress) * DOWNLOAD_PHASE_WEIGHT));
+        progress.progress(scaledProgress);
         if (!shouldEmitProgress(torrentProgress, message)) {
             return;
         }
-        progress.progress(scaledProgress);
         progress.message(message);
     }
 
@@ -182,8 +190,12 @@ public final class ClientInstallManager {
         }
 
         long now = System.nanoTime();
-        int percent = (int) Math.floor(torrentProgress.progress() * 100);
-        long speedBucket = Math.max(0, torrentProgress.downloadRateBytesPerSecond()) / SPEED_BUCKET_BYTES_PER_SECOND;
+        int percent = (int) Math.floor(displayProgress(torrentProgress) * 100);
+        long visibleRate = visibleDownloadRate(torrentProgress);
+        long speedBucket = visibleRate / SPEED_BUCKET_BYTES_PER_SECOND;
+        if (torrentProgress.progress() <= 0 && visibleRate <= 0) {
+            speedBucket = Math.max(0, torrentProgress.payloadDownloadedBytes()) / (512L * 1024L);
+        }
         boolean changed = percent != lastProgressPercent
                 || speedBucket != lastSpeedBucket
                 || !message.equals(lastProgressMessage);
@@ -252,6 +264,46 @@ public final class ClientInstallManager {
         return Math.round(value * 100) + "%";
     }
 
+    private static String initializingMessage(TorrentProgress torrentProgress) {
+        long visibleRate = visibleDownloadRate(torrentProgress);
+        if (visibleRate > 0 || torrentProgress.payloadDownloadedBytes() > 0) {
+            return "Receiving client data... " + formatDownloadAmount(torrentProgress)
+                    + " at " + formatRate(visibleRate);
+        }
+        return "Download initializing...";
+    }
+
+    private static String formatDownloadAmount(TorrentProgress torrentProgress) {
+        long downloadedBytes = Math.max(torrentProgress.payloadDownloadedBytes(), torrentProgress.downloadedBytes());
+        if (torrentProgress.totalBytes() > 0) {
+            return formatBytes(downloadedBytes) + " / " + formatBytes(torrentProgress.totalBytes());
+        }
+        return formatBytes(downloadedBytes);
+    }
+
+    private static double displayProgress(TorrentProgress torrentProgress) {
+        if (torrentProgress.totalBytes() > 0 && torrentProgress.payloadDownloadedBytes() > 0) {
+            return Math.min(0.99, torrentProgress.payloadDownloadedBytes() / (double) torrentProgress.totalBytes());
+        }
+        if (torrentProgress.totalBytes() > 0 && torrentProgress.downloadedBytes() > 0) {
+            return Math.min(0.99, torrentProgress.downloadedBytes() / (double) torrentProgress.totalBytes());
+        }
+        if (torrentProgress.progress() > 0) {
+            return torrentProgress.progress();
+        }
+        if (torrentProgress.finishedBlocks() > 0) {
+            return Math.min(0.005, torrentProgress.finishedBlocks() / 10_000.0);
+        }
+        return 0;
+    }
+
+    private static long visibleDownloadRate(TorrentProgress torrentProgress) {
+        return Math.max(
+                Math.max(torrentProgress.downloadRateBytesPerSecond(), torrentProgress.payloadDownloadRateBytesPerSecond()),
+                0
+        );
+    }
+
     private void resetProgressThrottle() {
         lastProgressEmitNanos = 0;
         lastProgressPercent = -1;
@@ -268,5 +320,20 @@ public final class ClientInstallManager {
             return String.format("%.0f KB/s", kib);
         }
         return String.format("%.1f MB/s", kib / 1024.0);
+    }
+
+    private static String formatBytes(long bytes) {
+        if (bytes <= 0) {
+            return "0 KB";
+        }
+        double kib = bytes / 1024.0;
+        if (kib < 1024) {
+            return String.format("%.0f KB", kib);
+        }
+        double mib = kib / 1024.0;
+        if (mib < 1024) {
+            return String.format("%.1f MB", mib);
+        }
+        return String.format("%.1f GB", mib / 1024.0);
     }
 }

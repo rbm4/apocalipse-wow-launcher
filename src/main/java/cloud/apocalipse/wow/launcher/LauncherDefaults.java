@@ -11,12 +11,14 @@ final class LauncherDefaults {
     private final String realmStatusUrl;
     private final String newsUrl;
     private final String wowExecutable;
+    private final String torrentFixedPeers;
 
-    private LauncherDefaults(String manifestUrl, String realmStatusUrl, String newsUrl, String wowExecutable) {
+    private LauncherDefaults(String manifestUrl, String realmStatusUrl, String newsUrl, String wowExecutable, String torrentFixedPeers) {
         this.manifestUrl = manifestUrl;
         this.realmStatusUrl = realmStatusUrl;
         this.newsUrl = newsUrl;
         this.wowExecutable = wowExecutable;
+        this.torrentFixedPeers = torrentFixedPeers;
     }
 
     static LauncherDefaults load() {
@@ -32,7 +34,8 @@ final class LauncherDefaults {
                 properties.getProperty("manifest.url", "https://wow.apocalipse.cloud/patches/manifest.json"),
                 properties.getProperty("realm.status.url", "https://wow.apocalipse.cloud/api/realm-status"),
                 properties.getProperty("news.url", "https://wow.apocalipse.cloud/api/news/latest"),
-                properties.getProperty("wow.executable", "Wow.exe")
+                properties.getProperty("wow.executable", "Wow.exe"),
+                properties.getProperty("torrent.fixedPeers", "")
         );
     }
 
@@ -50,5 +53,9 @@ final class LauncherDefaults {
 
     String wowExecutable() {
         return wowExecutable;
+    }
+
+    String torrentFixedPeers() {
+        return torrentFixedPeers;
     }
 }

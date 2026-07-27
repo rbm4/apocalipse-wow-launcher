@@ -5,6 +5,7 @@ import cloud.apocalipse.wow.launcher.torrent.TorrentException;
 import cloud.apocalipse.wow.launcher.torrent.TorrentProgress;
 import cloud.apocalipse.wow.launcher.torrent.TorrentProgressListener;
 import cloud.apocalipse.wow.launcher.torrent.TorrentState;
+import com.frostwire.jlibtorrent.AddTorrentParams;
 import com.frostwire.jlibtorrent.AlertListener;
 import com.frostwire.jlibtorrent.Priority;
 import com.frostwire.jlibtorrent.SessionParams;
@@ -15,16 +16,22 @@ import com.frostwire.jlibtorrent.TorrentFlags;
 import com.frostwire.jlibtorrent.TorrentHandle;
 import com.frostwire.jlibtorrent.TorrentInfo;
 import com.frostwire.jlibtorrent.TorrentStatus;
+import com.frostwire.jlibtorrent.TcpEndpoint;
 import com.frostwire.jlibtorrent.alerts.AddTorrentAlert;
 import com.frostwire.jlibtorrent.alerts.Alert;
 import com.frostwire.jlibtorrent.alerts.AlertType;
+import com.frostwire.jlibtorrent.alerts.BlockFinishedAlert;
 import com.frostwire.jlibtorrent.alerts.StateUpdateAlert;
 import com.frostwire.jlibtorrent.alerts.TrackerErrorAlert;
 import com.frostwire.jlibtorrent.alerts.TrackerReplyAlert;
 
+import java.io.File;
 import java.io.IOException;
+import java.net.InetAddress;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -34,6 +41,8 @@ public final class JlibtorrentDownloadService implements TorrentDownloadService 
     private static final String WARMUP_CACHE_DIRECTORY = "warmup-cache";
     private static final long WARMUP_POLL_INTERVAL_MILLIS = 5_000L;
     private static final long WARMUP_SAVE_INTERVAL_NANOS = 60_000_000_000L;
+    private static final long BLOCK_PROGRESS_EMIT_INTERVAL_NANOS = 500_000_000L;
+    private static final long ESTIMATED_BLOCK_BYTES = 16L * 1024L;
 
     private final Object lock = new Object();
     private final Object warmupLock = new Object();
@@ -44,6 +53,15 @@ public final class JlibtorrentDownloadService implements TorrentDownloadService 
     private Thread warmupThread;
     private volatile boolean warmupStopRequested;
     private volatile boolean warmupAnnounceStop;
+    private final List<String> fixedPeerSpecs;
+
+    public JlibtorrentDownloadService() {
+        this("");
+    }
+
+    public JlibtorrentDownloadService(String fixedPeers) {
+        this.fixedPeerSpecs = parseFixedPeerSpecs(fixedPeers);
+    }
 
     @Override
     public void download(Path torrentFile, Path destination, TorrentProgressListener listener) throws Exception {
@@ -60,6 +78,7 @@ public final class JlibtorrentDownloadService implements TorrentDownloadService 
         CountDownLatch finished = new CountDownLatch(1);
         AtomicReference<Throwable> failure = new AtomicReference<>();
         AtomicReference<TorrentHandle> handle = new AtomicReference<>();
+        AtomicReference<TorrentStatus> lastStatus = new AtomicReference<>();
         SessionManager activeSession = new SessionManager();
         synchronized (lock) {
             session = activeSession;
@@ -67,6 +86,8 @@ public final class JlibtorrentDownloadService implements TorrentDownloadService 
             activeFailure = failure;
         }
 
+        TorrentInfo torrentInfo = new TorrentInfo(torrentFile.toFile());
+        long totalSize = Math.max(0, torrentInfo.totalSize());
         WarmupDiagnostics diagnostics = new WarmupDiagnostics(listener);
         activeSession.addListener(new AlertListener() {
             @Override
@@ -83,16 +104,32 @@ public final class JlibtorrentDownloadService implements TorrentDownloadService 
                     torrentHandle.resume();
                     diagnostics.reportTorrentAdded(torrentHandle);
                     diagnostics.emitOnce("added", "Client download registered. Warming up network...");
-                    listener.onProgress(new TorrentProgress(TorrentState.DOWNLOADING, 0, 0, -1, 0, 0));
+                    listener.onProgress(new TorrentProgress(TorrentState.DOWNLOADING, 0, 0, totalSize, 0, 0, 0, 0, 0, 0, 0, 0, 0));
                     return;
                 }
                 if (type == AlertType.STATE_UPDATE) {
                     StateUpdateAlert stateUpdate = (StateUpdateAlert) alert;
                     if (!stateUpdate.status().isEmpty()) {
                         TorrentStatus status = stateUpdate.status().getFirst();
+                        lastStatus.set(status);
                         diagnostics.reportStatus(status);
-                        reportStatus(listener, status);
+                        reportStatus(listener, status, 0, totalSize);
                     }
+                    return;
+                }
+                if (type == AlertType.BLOCK_FINISHED) {
+                    BlockProgressSnapshot blockProgress = diagnostics.reportBlockFinished((BlockFinishedAlert) alert);
+                    TorrentStatus status = lastStatus.get();
+                    if (status != null && status.progress() <= 0) {
+                        if (hasVisibleTransferMetrics(status)) {
+                            reportStatus(listener, status, blockProgress.finishedBlocks(), totalSize);
+                        } else if (blockProgress.shouldReportProgress()) {
+                            reportBlockProgress(listener, blockProgress, totalSize);
+                        }
+                    } else if (blockProgress.shouldReportProgress()) {
+                        reportBlockProgress(listener, blockProgress, totalSize);
+                    }
+                    activeSession.postTorrentUpdates();
                     return;
                 }
                 if (type == AlertType.LISTEN_SUCCEEDED) {
@@ -117,7 +154,7 @@ public final class JlibtorrentDownloadService implements TorrentDownloadService 
                     return;
                 }
                 if (type == AlertType.TORRENT_FINISHED) {
-                    listener.onProgress(new TorrentProgress(TorrentState.COMPLETE, 1, -1, -1, 0, 0));
+                    listener.onProgress(new TorrentProgress(TorrentState.COMPLETE, 1, totalSize, totalSize, 0, 0, 0, totalSize, 0, 0, 0, 0, 0));
                     finished.countDown();
                     return;
                 }
@@ -128,13 +165,21 @@ public final class JlibtorrentDownloadService implements TorrentDownloadService 
             }
         });
 
-        listener.onProgress(new TorrentProgress(TorrentState.STARTING, 0, 0, -1, 0, 0));
+        listener.onProgress(new TorrentProgress(TorrentState.STARTING, 0, 0, totalSize, 0, 0, 0, 0, 0, 0, 0, 0, 0));
         try {
             activeSession.start(sessionParams(stateDirectory, listener));
             activeSession.startDht();
             diagnostics.emitOnce("diskPreparing", "Preparing disk allocation for client files...");
-            activeSession.download(new TorrentInfo(torrentFile.toFile()), destination.toFile());
-            forceAnnounce(handle.get(), diagnostics, true);
+            List<TcpEndpoint> fixedPeers = resolveFixedPeers(listener);
+            reportFixedPeers(fixedPeers, diagnostics);
+            addTorrent(
+                    activeSession,
+                    torrentInfo,
+                    destination.toFile(),
+                    null,
+                    fixedPeers,
+                    new com.frostwire.jlibtorrent.swig.torrent_flags_t()
+            );
             while (!finished.await(1, TimeUnit.SECONDS)) {
                 activeSession.postTorrentUpdates();
                 diagnostics.reportSession(activeSession);
@@ -175,7 +220,6 @@ public final class JlibtorrentDownloadService implements TorrentDownloadService 
             warmupStopRequested = false;
             warmupAnnounceStop = true;
             SessionManager activeWarmupSession = new SessionManager();
-            AtomicReference<TorrentHandle> warmupHandle = new AtomicReference<>();
             warmupSession = activeWarmupSession;
             WarmupDiagnostics diagnostics = new WarmupDiagnostics(listener);
             activeWarmupSession.addListener(new AlertListener() {
@@ -189,10 +233,8 @@ public final class JlibtorrentDownloadService implements TorrentDownloadService 
                     AlertType type = alert.type();
                     if (type == AlertType.ADD_TORRENT) {
                         TorrentHandle torrentHandle = ((AddTorrentAlert) alert).handle();
-                        warmupHandle.set(torrentHandle);
                         torrentHandle.resume();
                         diagnostics.emitOnce("warmupTorrentAdded", "Client torrent registered for source discovery.");
-                        forceAnnounce(torrentHandle, diagnostics, true);
                         return;
                     }
                     if (type == AlertType.STATE_UPDATE) {
@@ -234,7 +276,7 @@ public final class JlibtorrentDownloadService implements TorrentDownloadService 
             });
 
             warmupThread = new Thread(
-                    () -> runWarmup(activeWarmupSession, torrentFile, stateDirectory, diagnostics, listener, warmupHandle),
+                    () -> runWarmup(activeWarmupSession, torrentFile, stateDirectory, diagnostics, listener),
                     "apocalipse-wow-torrent-warmup"
             );
             warmupThread.setDaemon(true);
@@ -299,8 +341,7 @@ public final class JlibtorrentDownloadService implements TorrentDownloadService 
             Path torrentFile,
             Path stateDirectory,
             WarmupDiagnostics diagnostics,
-            TorrentProgressListener listener,
-            AtomicReference<TorrentHandle> warmupHandle
+            TorrentProgressListener listener
     ) {
         long lastSaveNanos = 0L;
         try {
@@ -310,12 +351,14 @@ public final class JlibtorrentDownloadService implements TorrentDownloadService 
             activeWarmupSession.startDht();
             Path warmupCache = stateDirectory.resolve(WARMUP_CACHE_DIRECTORY);
             Files.createDirectories(warmupCache);
-            activeWarmupSession.download(
+            List<TcpEndpoint> fixedPeers = resolveFixedPeers(listener);
+            reportFixedPeers(fixedPeers, diagnostics);
+            addTorrent(
+                    activeWarmupSession,
                     torrentInfo,
                     warmupCache.toFile(),
-                    null,
                     Priority.array(Priority.IGNORE, torrentInfo.numFiles()),
-                    java.util.List.of(),
+                    fixedPeers,
                     TorrentFlags.UPLOAD_MODE
             );
             activeWarmupSession.dhtGetPeers(torrentInfo.infoHashV1(), 1);
@@ -331,7 +374,6 @@ public final class JlibtorrentDownloadService implements TorrentDownloadService 
                     lastSaveNanos = now;
                 }
                 activeWarmupSession.dhtGetPeers(torrentInfo.infoHashV1(), 1);
-                forcePeerDiscovery(warmupHandle.get(), diagnostics);
                 Thread.sleep(WARMUP_POLL_INTERVAL_MILLIS);
             }
         } catch (InterruptedException exc) {
@@ -394,6 +436,70 @@ public final class JlibtorrentDownloadService implements TorrentDownloadService 
         }
     }
 
+    private static void addTorrent(
+            SessionManager session,
+            TorrentInfo torrentInfo,
+            File destination,
+            Priority[] priorities,
+            List<TcpEndpoint> fixedPeers,
+            com.frostwire.jlibtorrent.swig.torrent_flags_t flags
+    ) {
+        AddTorrentParams params = AddTorrentParams.createInstance();
+        params.torrentInfo(torrentInfo);
+        params.savePath(destination.getAbsolutePath());
+        params.storageMode(StorageMode.STORAGE_MODE_SPARSE);
+        if (priorities != null) {
+            params.filePriorities(priorities);
+        }
+        if (fixedPeers != null && !fixedPeers.isEmpty()) {
+            params.peers(fixedPeers);
+        }
+        params.flags(flags == null ? new com.frostwire.jlibtorrent.swig.torrent_flags_t() : flags);
+        session.swig().async_add_torrent(params.swig());
+    }
+
+    private List<TcpEndpoint> resolveFixedPeers(TorrentProgressListener listener) {
+        List<TcpEndpoint> peers = new ArrayList<>();
+        for (String peerSpec : fixedPeerSpecs) {
+            int separator = peerSpec.lastIndexOf(':');
+            if (separator <= 0 || separator == peerSpec.length() - 1) {
+                listener.onStatusMessage("Fixed seed peer was ignored because its address is invalid.");
+                continue;
+            }
+            String host = peerSpec.substring(0, separator).trim();
+            String portText = peerSpec.substring(separator + 1).trim();
+            try {
+                int port = Integer.parseInt(portText);
+                for (InetAddress address : InetAddress.getAllByName(host)) {
+                    peers.add(new TcpEndpoint(address.getHostAddress(), port));
+                }
+            } catch (Exception exc) {
+                listener.onStatusMessage("Fixed seed peer could not be resolved: " + peerSpec);
+            }
+        }
+        return peers;
+    }
+
+    private static List<String> parseFixedPeerSpecs(String fixedPeers) {
+        if (fixedPeers == null || fixedPeers.isBlank()) {
+            return List.of();
+        }
+        List<String> peers = new ArrayList<>();
+        for (String peer : fixedPeers.split("[,;\\s]+")) {
+            String trimmed = peer.trim();
+            if (!trimmed.isEmpty()) {
+                peers.add(trimmed);
+            }
+        }
+        return List.copyOf(peers);
+    }
+
+    private static void reportFixedPeers(List<TcpEndpoint> fixedPeers, WarmupDiagnostics diagnostics) {
+        if (!fixedPeers.isEmpty()) {
+            diagnostics.emitOnce("fixedPeers", "Using " + fixedPeers.size() + " fixed seed peer endpoint(s).");
+        }
+    }
+
     private static void saveState(SessionManager session, Path stateDirectory, TorrentProgressListener listener, boolean report) {
         if (stateDirectory == null) {
             return;
@@ -412,7 +518,7 @@ public final class JlibtorrentDownloadService implements TorrentDownloadService 
     }
 
     private static void forceAnnounce(TorrentHandle handle, WarmupDiagnostics diagnostics, boolean allTrackers) {
-        if (handle == null || !handle.isValid()) {
+        if (handle == null) {
             return;
         }
         try {
@@ -433,27 +539,68 @@ public final class JlibtorrentDownloadService implements TorrentDownloadService 
         }
     }
 
-    private static void forcePeerDiscovery(TorrentHandle handle, WarmupDiagnostics diagnostics) {
-        if (handle == null || !handle.isValid()) {
-            return;
-        }
-        try {
-            handle.forceDHTAnnounce();
-            diagnostics.emitOnce("forceDhtAnnounce", "Requested immediate peer discovery announce.");
-        } catch (RuntimeException exc) {
-            diagnostics.emitOnce("forceAnnounceFailed", "Could not request immediate peer discovery announce.");
-        }
+    private static void reportStatus(TorrentProgressListener listener, TorrentStatus status) {
+        reportStatus(listener, status, 0, 0);
     }
 
-    private static void reportStatus(TorrentProgressListener listener, TorrentStatus status) {
+    private static void reportStatus(TorrentProgressListener listener, TorrentStatus status, long finishedBlocks, long totalSize) {
+        long totalBytes = firstPositive(status.totalWanted(), totalSize);
+        long payloadDownloadedBytes = status.totalPayloadDownload();
+        long downloadedBytes = firstPositive(status.totalDone(), payloadDownloadedBytes);
         listener.onProgress(new TorrentProgress(
                 TorrentState.DOWNLOADING,
                 clamp(status.progress()),
-                status.totalDone(),
-                status.totalWanted(),
+                downloadedBytes,
+                totalBytes,
                 status.downloadRate(),
-                status.numPeers()
+                status.downloadPayloadRate(),
+                status.numPeers(),
+                payloadDownloadedBytes,
+                status.totalFailedBytes(),
+                status.totalRedundantBytes(),
+                status.numSeeds(),
+                status.numConnections(),
+                finishedBlocks
         ));
+    }
+
+    private static void reportBlockProgress(TorrentProgressListener listener, BlockProgressSnapshot blockProgress, long totalSize) {
+        long estimatedDownloadedBytes = totalSize > 0
+                ? Math.min(blockProgress.estimatedDownloadedBytes(), totalSize)
+                : blockProgress.estimatedDownloadedBytes();
+        listener.onProgress(new TorrentProgress(
+                TorrentState.DOWNLOADING,
+                0,
+                estimatedDownloadedBytes,
+                totalSize,
+                0,
+                blockProgress.estimatedRateBytesPerSecond(),
+                0,
+                estimatedDownloadedBytes,
+                0,
+                0,
+                0,
+                0,
+                blockProgress.finishedBlocks()
+        ));
+    }
+
+    private static long firstPositive(long primary, long fallback) {
+        return primary > 0 ? primary : Math.max(fallback, 0);
+    }
+
+    private static boolean hasVisibleTransferMetrics(TorrentStatus status) {
+        return status.totalPayloadDownload() > 0
+                || status.downloadRate() > 0
+                || status.downloadPayloadRate() > 0;
+    }
+
+    private record BlockProgressSnapshot(
+            long finishedBlocks,
+            long estimatedDownloadedBytes,
+            long estimatedRateBytesPerSecond,
+            boolean shouldReportProgress
+    ) {
     }
 
     private static final class WarmupDiagnostics {
@@ -468,7 +615,10 @@ public final class JlibtorrentDownloadService implements TorrentDownloadService 
         private int trackerErrors;
         private int trackerReplies;
         private int trackerPeers;
+        private long finishedBlocks;
         private long lastForceAnnounceNanos;
+        private long firstBlockNanos;
+        private long lastBlockProgressNanos;
 
         private WarmupDiagnostics(TorrentProgressListener listener) {
             this.listener = listener;
@@ -480,9 +630,40 @@ public final class JlibtorrentDownloadService implements TorrentDownloadService 
             if (status.numPeers() > 0 && status.progress() <= 0) {
                 emitOccasionally("peersWaiting", "Found peers. Waiting for downloadable pieces...");
             }
-            if (status.downloadRate() > 0 && status.progress() <= 0) {
+            if (visibleDownloadRate(status) > 0 && status.progress() <= 0) {
                 emitOnce("rateBeforeProgress", "Receiving data. Progress will move after pieces verify.");
             }
+            if (status.totalPayloadDownload() > 0 && status.progress() <= 0) {
+                emitOccasionally("payloadBeforeProgress",
+                        "Received " + formatBytes(status.totalPayloadDownload())
+                                + " before verified progress, " + formatRate(visibleDownloadRate(status))
+                                + ", " + status.numSeeds() + " seed" + (status.numSeeds() == 1 ? "" : "s")
+                                + ", " + status.numConnections() + " connection" + (status.numConnections() == 1 ? "" : "s") + ".");
+            }
+        }
+
+        private BlockProgressSnapshot reportBlockFinished(BlockFinishedAlert alert) {
+            finishedBlocks++;
+            long now = System.nanoTime();
+            if (firstBlockNanos == 0L) {
+                firstBlockNanos = now;
+            }
+            long estimatedDownloadedBytes = finishedBlocks * ESTIMATED_BLOCK_BYTES;
+            long elapsedNanos = Math.max(BLOCK_PROGRESS_EMIT_INTERVAL_NANOS, now - firstBlockNanos);
+            long estimatedRate = finishedBlocks <= 1
+                    ? 0
+                    : (long) (estimatedDownloadedBytes / (elapsedNanos / 1_000_000_000.0));
+            boolean shouldReportProgress = lastBlockProgressNanos == 0L
+                    || now - lastBlockProgressNanos >= BLOCK_PROGRESS_EMIT_INTERVAL_NANOS;
+            if (shouldReportProgress) {
+                lastBlockProgressNanos = now;
+            }
+            if (lastStatus == null || lastStatus.progress() <= 0) {
+                emitOccasionally("blocksFinished",
+                        "Downloaded " + finishedBlocks + " block" + (finishedBlocks == 1 ? "" : "s")
+                                + " before verified piece progress.");
+            }
+            return new BlockProgressSnapshot(finishedBlocks, estimatedDownloadedBytes, estimatedRate, shouldReportProgress);
         }
 
         private void reportTorrentAdded(TorrentHandle handle) {
@@ -518,8 +699,11 @@ public final class JlibtorrentDownloadService implements TorrentDownloadService 
                     "health",
                     "Download health: " + lastStatus.numPeers()
                             + " peer" + (lastStatus.numPeers() == 1 ? "" : "s")
+                            + ", " + lastStatus.numSeeds() + " seed" + (lastStatus.numSeeds() == 1 ? "" : "s")
+                            + ", " + lastStatus.numConnections() + " connection" + (lastStatus.numConnections() == 1 ? "" : "s")
                             + ", " + dhtNodes + " discovery nodes"
-                            + ", " + formatRate(lastStatus.downloadRate())
+                            + ", " + formatRate(visibleDownloadRate(lastStatus))
+                            + ", " + formatBytes(lastStatus.totalPayloadDownload()) + " received"
             );
             if (lastStatus.numPeers() == 0 && dhtNodes > 0) {
                 emitOccasionally("noPeersYet", "Peer discovery is online, but no downloadable sources have connected yet.");
@@ -528,7 +712,7 @@ public final class JlibtorrentDownloadService implements TorrentDownloadService 
         }
 
         private void maybeForceAnnounce(TorrentHandle handle) {
-            if (lastStatus == null || lastStatus.progress() > 0 || handle == null || !handle.isValid()) {
+            if (lastStatus == null || lastStatus.progress() > 0 || handle == null) {
                 return;
             }
             long now = System.nanoTime();
@@ -536,7 +720,7 @@ public final class JlibtorrentDownloadService implements TorrentDownloadService 
                 return;
             }
             lastForceAnnounceNanos = now;
-            forcePeerDiscovery(handle, this);
+            forceAnnounce(handle, this, false);
         }
 
         private void reportState(TorrentStatus.State state) {
@@ -602,6 +786,25 @@ public final class JlibtorrentDownloadService implements TorrentDownloadService 
                 return String.format("%.0f KB/s", kib);
             }
             return String.format("%.1f MB/s", kib / 1024.0);
+        }
+
+        private static String formatBytes(long bytes) {
+            if (bytes <= 0) {
+                return "0 KB";
+            }
+            double kib = bytes / 1024.0;
+            if (kib < 1024) {
+                return String.format("%.0f KB", kib);
+            }
+            double mib = kib / 1024.0;
+            if (mib < 1024) {
+                return String.format("%.1f MB", mib);
+            }
+            return String.format("%.1f GB", mib / 1024.0);
+        }
+
+        private static long visibleDownloadRate(TorrentStatus status) {
+            return Math.max(Math.max(status.downloadRate(), status.downloadPayloadRate()), 0);
         }
     }
 }

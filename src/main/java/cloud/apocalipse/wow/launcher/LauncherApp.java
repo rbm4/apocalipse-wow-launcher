@@ -47,6 +47,9 @@ import javafx.stage.StageStyle;
 import java.io.File;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.net.CookieHandler;
+import java.net.CookieManager;
+import java.net.CookiePolicy;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -58,12 +61,13 @@ import java.util.List;
 public final class LauncherApp extends Application {
     private static final String WEBSITE_URL = "https://wow.apocalipse.cloud/";
     private static final DateTimeFormatter LOG_TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm:ss");
+    private static final long MIN_CLIENT_DOWNLOAD_SPACE_BYTES = 17L * 1024L * 1024L * 1024L;
 
     private final LauncherDefaults defaults = LauncherDefaults.load();
     private final LauncherConfig config = new LauncherConfig(defaults);
     private final PatchManager patchManager = new PatchManager();
     private final GameLauncher gameLauncher = new GameLauncher(defaults.wowExecutable());
-    private final JlibtorrentDownloadService torrentDownloadService = new JlibtorrentDownloadService();
+    private final JlibtorrentDownloadService torrentDownloadService = new JlibtorrentDownloadService(defaults.torrentFixedPeers());
     private final ClientInstallManager clientInstallManager = new ClientInstallManager(
             new ClientInstallPaths(),
             torrentDownloadService,
@@ -142,6 +146,7 @@ public final class LauncherApp extends Application {
     public void start(Stage stage) {
         try {
             writeStartupLog("Starting launcher.", null);
+            installWebsiteCookieStore();
             stage.initStyle(StageStyle.UNDECORATED);
             language = AppLanguage.fromCode(config.language());
             wowPathLabel = new Label();
@@ -241,6 +246,7 @@ public final class LauncherApp extends Application {
 
             log(t("log.launcherReady"));
             writeStartupLog("Launcher UI initialized.", null);
+            validateConfiguredWowDirectory();
             startClientDownloadWarmup();
             startRealmStatusRefresh();
             refreshNews();
@@ -260,6 +266,19 @@ public final class LauncherApp extends Application {
             writeStartupLog("Launcher failed during JavaFX start().", exc);
             throw exc;
         }
+    }
+
+    private void validateConfiguredWowDirectory() {
+        config.wowDirectory().ifPresent(wowDirectory -> {
+            if (!Files.isDirectory(wowDirectory) || !Files.isRegularFile(wowDirectory.resolve(defaults.wowExecutable()))) {
+                config.clearWowDirectory();
+                patchVerified = false;
+                refreshWowPathLabel();
+                refreshSetupPanelVisibility();
+                saveConfig();
+                log(t("log.savedWowFolderMissing"));
+            }
+        });
     }
 
     @Override
@@ -368,6 +387,19 @@ public final class LauncherApp extends Application {
         websiteWebView.getEngine().load(WEBSITE_URL);
         websiteWebView.setContextMenuEnabled(false);
         return websiteWebView;
+    }
+
+    private void installWebsiteCookieStore() {
+        CookieHandler current = CookieHandler.getDefault();
+        if (current instanceof CookieManager) {
+            return;
+        }
+        Path cookiePath = config.appDataDirectory().resolve("website-cookies.properties");
+        CookieManager cookieManager = new CookieManager(
+                new PersistentCookieStore(cookiePath),
+                CookiePolicy.ACCEPT_ORIGINAL_SERVER
+        );
+        CookieHandler.setDefault(cookieManager);
     }
 
     private Button windowButton(Region icon) {
@@ -858,7 +890,25 @@ public final class LauncherApp extends Application {
             chooser.setInitialDirectory(initialDirectory.toFile());
         }
         File selected = chooser.showDialog(stage);
-        return selected == null ? null : selected.toPath().toAbsolutePath().normalize();
+        if (selected == null) {
+            return null;
+        }
+        Path selectedPath = selected.toPath().toAbsolutePath().normalize();
+        try {
+            long usableSpace = Files.getFileStore(selectedPath).getUsableSpace();
+            if (usableSpace < MIN_CLIENT_DOWNLOAD_SPACE_BYTES) {
+                String message = t("error.notEnoughDiskSpace")
+                        .replace("{required}", formatDiskSize(MIN_CLIENT_DOWNLOAD_SPACE_BYTES))
+                        .replace("{available}", formatDiskSize(usableSpace));
+                statusLabel.setText(message);
+                log(message);
+                return null;
+            }
+        } catch (Exception exc) {
+            log(t("log.clientInstallFailed") + ": " + exc.getMessage());
+            return null;
+        }
+        return selectedPath;
     }
 
     private void startClientDownloadWarmup() {
@@ -1305,6 +1355,15 @@ public final class LauncherApp extends Application {
         if (message.equals("Download initializing...")) {
             return t("client.downloadInitializing");
         }
+        if (message.startsWith("Receiving client data... ") && message.contains(" at ")) {
+            String details = message.substring("Receiving client data... ".length());
+            int separator = details.lastIndexOf(" at ");
+            if (separator > 0) {
+                return t("client.receivingClientData")
+                        .replace("{downloaded}", details.substring(0, separator))
+                        .replace("{speed}", details.substring(separator + " at ".length()));
+            }
+        }
         if (message.startsWith("Downloading client... ") && message.contains(" at ")) {
             String details = message.substring("Downloading client... ".length());
             int separator = details.lastIndexOf(" at ");
@@ -1341,6 +1400,17 @@ public final class LauncherApp extends Application {
         }
         if (message.equals("Client torrent registered for source discovery.")) {
             return t("client.warmupTorrentRegistered");
+        }
+        if (message.startsWith("Using ") && message.endsWith(" fixed seed peer endpoint(s).")) {
+            String count = message.substring("Using ".length(), message.indexOf(" fixed seed"));
+            return t("client.fixedSeedPeers").replace("{count}", count);
+        }
+        if (message.equals("Fixed seed peer was ignored because its address is invalid.")) {
+            return t("client.fixedSeedInvalid");
+        }
+        if (message.startsWith("Fixed seed peer could not be resolved: ")) {
+            return t("client.fixedSeedResolveFailed")
+                    .replace("{peer}", message.substring("Fixed seed peer could not be resolved: ".length()));
         }
         if (message.equals("Peer discovery lookup is active for the client download.")) {
             return t("client.warmupLookup");
@@ -1388,6 +1458,26 @@ public final class LauncherApp extends Application {
         if (message.equals("Receiving data. Progress will move after pieces verify.")) {
             return t("client.receivingBeforeProgress");
         }
+        if (message.startsWith("Received ") && message.contains(" before verified progress, ")) {
+            java.util.regex.Matcher matcher = java.util.regex.Pattern
+                    .compile("Received (.+) before verified progress, (.+), (\\d+) seeds?, (\\d+) connections?\\.")
+                    .matcher(message);
+            if (matcher.matches()) {
+                return t("client.receivedBeforeProgress")
+                        .replace("{downloaded}", matcher.group(1))
+                        .replace("{speed}", matcher.group(2))
+                        .replace("{seeds}", matcher.group(3))
+                        .replace("{connections}", matcher.group(4));
+            }
+        }
+        if (message.startsWith("Downloaded ") && message.endsWith(" before verified piece progress.")) {
+            java.util.regex.Matcher matcher = java.util.regex.Pattern
+                    .compile("Downloaded (\\d+) blocks? before verified piece progress\\.")
+                    .matcher(message);
+            if (matcher.matches()) {
+                return t("client.blocksBeforeProgress").replace("{blocks}", matcher.group(1));
+            }
+        }
         if (message.equals("Preparing disk allocation for client files...")) {
             return t("client.diskPreparing");
         }
@@ -1404,13 +1494,16 @@ public final class LauncherApp extends Application {
         if (message.startsWith("Download health: ")) {
             String details = message.substring("Download health: ".length());
             java.util.regex.Matcher matcher = java.util.regex.Pattern
-                    .compile("(\\d+) peers?, (\\d+) discovery nodes, (.+)")
+                    .compile("(\\d+) peers?, (\\d+) seeds?, (\\d+) connections?, (\\d+) discovery nodes, (.+), (.+) received")
                     .matcher(details);
             if (matcher.matches()) {
                 return t("client.healthCheck")
                         .replace("{peers}", matcher.group(1))
-                        .replace("{nodes}", matcher.group(2))
-                        .replace("{speed}", matcher.group(3));
+                        .replace("{seeds}", matcher.group(2))
+                        .replace("{connections}", matcher.group(3))
+                        .replace("{nodes}", matcher.group(4))
+                        .replace("{speed}", matcher.group(5))
+                        .replace("{downloaded}", matcher.group(6));
             }
             return details;
         }
@@ -1474,6 +1567,11 @@ public final class LauncherApp extends Application {
             return t("error.dataFolderMissing").replace("{folder}", message.substring("Data folder was not found in ".length()));
         }
         return message;
+    }
+
+    private static String formatDiskSize(long bytes) {
+        double gib = bytes / 1024.0 / 1024.0 / 1024.0;
+        return String.format("%.1f GB", gib);
     }
 
     static void writeStartupLog(String message, Throwable throwable) {
@@ -1571,7 +1669,7 @@ public final class LauncherApp extends Application {
                 case "setup.description" -> "Baixe um cliente pronto para o Apocalipse ou selecione uma instalação existente do WoW 3.3.5a.";
                 case "setup.existingNotice" -> "Ao usar uma instalação existente, o launcher irá ajustar o realmlist e gerenciar arquivos de patch dentro dessa pasta.";
                 case "home.subtitle" -> "Atualize, verifique e entre em Azeroth pelo reino Apocalipse.";
-                case "home.badge" -> "Patch de temporada gerenciado pelo launcher";
+                case "home.badge" -> "Temporada 1: O Início";
                 case "realm.title" -> "Status do Reino";
                 case "realm.checking" -> "Verificando...";
                 case "realm.awaiting" -> "Aguardando status";
@@ -1609,6 +1707,7 @@ public final class LauncherApp extends Application {
                 case "dialog.selectClientInstallFolder" -> "Selecionar pasta para instalar o cliente";
                 case "log.launchProfileSelected" -> "Perfil de execução selecionado";
                 case "log.selectedWowFolder" -> "Pasta do WoW selecionada";
+                case "log.savedWowFolderMissing" -> "A instalação salva não foi encontrada. Configure o cliente novamente.";
                 case "log.selectWowFolderFirst" -> "Selecione sua pasta do WoW primeiro.";
                 case "log.patchFailed" -> "Falha na atualização";
                 case "log.launchingProfile" -> "Iniciando Wow.exe com perfil";
@@ -1634,6 +1733,7 @@ public final class LauncherApp extends Application {
                 case "client.preparingDownload" -> "Preparando download do cliente...";
                 case "client.startingDownload" -> "Iniciando download do cliente...";
                 case "client.downloadInitializing" -> "Inicializando download...";
+                case "client.receivingClientData" -> "Recebendo dados... {downloaded} a {speed}";
                 case "client.downloading" -> "Baixando cliente... {percent} a {speed}";
                 case "client.verifying" -> "Verificando arquivos do cliente...";
                 case "client.cleaningCancelled" -> "Removendo arquivos parciais...";
@@ -1644,6 +1744,9 @@ public final class LauncherApp extends Application {
                 case "client.warmupNetworkError" -> "A preparação da rede encontrou um erro de conexão.";
                 case "client.warmupTorrent" -> "Preparando descoberta de fontes para o download do cliente.";
                 case "client.warmupTorrentRegistered" -> "Torrent do cliente registrado para descoberta de fontes.";
+                case "client.fixedSeedPeers" -> "Servidor de seed fixo carregado: {count} endpoint(s).";
+                case "client.fixedSeedInvalid" -> "Servidor de seed fixo ignorado por endereço inválido.";
+                case "client.fixedSeedResolveFailed" -> "Não foi possível resolver o servidor de seed fixo: {peer}";
                 case "client.warmupLookup" -> "Busca de fontes ativa para o download do cliente.";
                 case "client.warmupStateLoaded" -> "Estado salvo de descoberta de fontes carregado.";
                 case "client.warmupStateSaved" -> "Estado de descoberta de fontes salvo.";
@@ -1659,11 +1762,13 @@ public final class LauncherApp extends Application {
                 case "client.peerConnected" -> "Conectado a uma fonte de download.";
                 case "client.peersWaitingPieces" -> "Fontes encontradas. Aguardando partes disponíveis...";
                 case "client.receivingBeforeProgress" -> "Recebendo dados. O progresso avança após validar as partes.";
+                case "client.receivedBeforeProgress" -> "Recebidos {downloaded} antes do progresso validado, {speed}, {seeds} seed(s), {connections} conexão(ões).";
+                case "client.blocksBeforeProgress" -> "{blocks} bloco(s) baixado(s) antes do progresso validado.";
                 case "client.diskPreparing" -> "Preparando espaço em disco para os arquivos do cliente...";
                 case "client.engineState" -> "Estado do download: {state}";
                 case "client.discoveryNodes" -> "Nós de descoberta encontrados: {count}";
                 case "client.listeningEndpoint" -> "Aguardando conexões de fontes em {endpoint}";
-                case "client.healthCheck" -> "Saúde do download: {peers} fonte(s), {nodes} nós de descoberta, {speed}";
+                case "client.healthCheck" -> "Saúde do download: {peers} fonte(s), {seeds} seed(s), {connections} conexão(ões), {nodes} nós, {speed}, {downloaded} recebidos";
                 case "client.noPeersYet" -> "A descoberta de fontes está online, mas nenhuma fonte baixável conectou ainda.";
                 case "client.trackerHealth" -> "Saúde dos rastreadores: {replies} resposta(s), {sources} fonte(s) informadas, {errors} rastreador(es) indisponíveis.";
                 case "client.trackersLoaded" -> "{count} rastreador(es) carregados do torrent.";
@@ -1680,6 +1785,7 @@ public final class LauncherApp extends Application {
                 case "error.wowExeMissing" -> "Wow.exe não foi encontrado em {folder}";
                 case "error.wowAlreadyRunning" -> "Wow.exe já está aberto.";
                 case "error.dataFolderMissing" -> "A pasta Data não foi encontrada em {folder}";
+                case "error.notEnoughDiskSpace" -> "Espaço insuficiente. Necessário: {required}. Disponível: {available}.";
                 case "error.unknown" -> "erro desconhecido";
                 default -> key;
             };
@@ -1711,7 +1817,7 @@ public final class LauncherApp extends Application {
                 case "setup.description" -> "Download a client ready for Apocalipse or select an existing WoW 3.3.5a installation.";
                 case "setup.existingNotice" -> "When using an existing installation, the launcher will update the realmlist and manage patch files inside that folder.";
                 case "home.subtitle" -> "Patch, verify, and enter Azeroth through the Apocalipse realm.";
-                case "home.badge" -> "Season client patch managed by launcher";
+                case "home.badge" -> "Season 1: The beginning";
                 case "realm.title" -> "Realm Status";
                 case "realm.checking" -> "Checking...";
                 case "realm.awaiting" -> "Awaiting status";
@@ -1749,6 +1855,7 @@ public final class LauncherApp extends Application {
                 case "dialog.selectClientInstallFolder" -> "Select Client Install Folder";
                 case "log.launchProfileSelected" -> "Launch profile selected";
                 case "log.selectedWowFolder" -> "Selected WoW folder";
+                case "log.savedWowFolderMissing" -> "Saved installation was not found. Set up the client again.";
                 case "log.selectWowFolderFirst" -> "Select your WoW folder first.";
                 case "log.patchFailed" -> "Patch failed";
                 case "log.launchingProfile" -> "Launching Wow.exe with profile";
@@ -1774,6 +1881,7 @@ public final class LauncherApp extends Application {
                 case "client.preparingDownload" -> "Preparing client download...";
                 case "client.startingDownload" -> "Starting client download...";
                 case "client.downloadInitializing" -> "Download initializing...";
+                case "client.receivingClientData" -> "Receiving data... {downloaded} at {speed}";
                 case "client.downloading" -> "Downloading client... {percent} at {speed}";
                 case "client.verifying" -> "Verifying client files...";
                 case "client.cleaningCancelled" -> "Removing partial files...";
@@ -1784,6 +1892,9 @@ public final class LauncherApp extends Application {
                 case "client.warmupNetworkError" -> "Source network warm-up hit a connection error.";
                 case "client.warmupTorrent" -> "Warming source discovery for the client download.";
                 case "client.warmupTorrentRegistered" -> "Client torrent registered for source discovery.";
+                case "client.fixedSeedPeers" -> "Fixed seed server loaded: {count} endpoint(s).";
+                case "client.fixedSeedInvalid" -> "Fixed seed server ignored because its address is invalid.";
+                case "client.fixedSeedResolveFailed" -> "Could not resolve fixed seed server: {peer}";
                 case "client.warmupLookup" -> "Source lookup is active for the client download.";
                 case "client.warmupStateLoaded" -> "Loaded saved source discovery state.";
                 case "client.warmupStateSaved" -> "Saved source discovery state.";
@@ -1799,11 +1910,13 @@ public final class LauncherApp extends Application {
                 case "client.peerConnected" -> "Connected to a download source.";
                 case "client.peersWaitingPieces" -> "Sources found. Waiting for downloadable pieces...";
                 case "client.receivingBeforeProgress" -> "Receiving data. Progress will move after pieces verify.";
+                case "client.receivedBeforeProgress" -> "Received {downloaded} before verified progress, {speed}, {seeds} seed(s), {connections} connection(s).";
+                case "client.blocksBeforeProgress" -> "{blocks} block(s) downloaded before verified progress.";
                 case "client.diskPreparing" -> "Preparing disk space for client files...";
                 case "client.engineState" -> "Download state: {state}";
                 case "client.discoveryNodes" -> "Peer discovery nodes found: {count}";
                 case "client.listeningEndpoint" -> "Listening for source connections on {endpoint}";
-                case "client.healthCheck" -> "Download health: {peers} source(s), {nodes} discovery nodes, {speed}";
+                case "client.healthCheck" -> "Download health: {peers} source(s), {seeds} seed(s), {connections} connection(s), {nodes} nodes, {speed}, {downloaded} received";
                 case "client.noPeersYet" -> "Peer discovery is online, but no downloadable sources have connected yet.";
                 case "client.trackerHealth" -> "Tracker health: {replies} reply/replies, {sources} reported source(s), {errors} unavailable tracker(s).";
                 case "client.trackersLoaded" -> "Loaded {count} tracker(s) from torrent.";
@@ -1820,6 +1933,7 @@ public final class LauncherApp extends Application {
                 case "error.wowExeMissing" -> "Wow.exe was not found in {folder}";
                 case "error.wowAlreadyRunning" -> "Wow.exe is already running.";
                 case "error.dataFolderMissing" -> "Data folder was not found in {folder}";
+                case "error.notEnoughDiskSpace" -> "Not enough disk space. Required: {required}. Available: {available}.";
                 case "error.unknown" -> "unknown error";
                 default -> key;
             };
@@ -1851,7 +1965,7 @@ public final class LauncherApp extends Application {
                 case "setup.description" -> "Descarga un cliente listo para Apocalipse o selecciona una instalación existente de WoW 3.3.5a.";
                 case "setup.existingNotice" -> "Al usar una instalación existente, el launcher ajustará el realmlist y gestionará archivos de parche dentro de esa carpeta.";
                 case "home.subtitle" -> "Actualiza, verifica y entra en Azeroth por el reino Apocalipse.";
-                case "home.badge" -> "Parche de temporada gestionado por el launcher";
+                case "home.badge" -> "Temporada 1 el princípio";
                 case "realm.title" -> "Estado del Reino";
                 case "realm.checking" -> "Verificando...";
                 case "realm.awaiting" -> "Esperando estado";
@@ -1889,6 +2003,7 @@ public final class LauncherApp extends Application {
                 case "dialog.selectClientInstallFolder" -> "Seleccionar carpeta para instalar el cliente";
                 case "log.launchProfileSelected" -> "Perfil de inicio seleccionado";
                 case "log.selectedWowFolder" -> "Carpeta de WoW seleccionada";
+                case "log.savedWowFolderMissing" -> "La instalación guardada no fue encontrada. Configura el cliente nuevamente.";
                 case "log.selectWowFolderFirst" -> "Selecciona primero tu carpeta de WoW.";
                 case "log.patchFailed" -> "Error de actualización";
                 case "log.launchingProfile" -> "Iniciando Wow.exe con perfil";
@@ -1914,6 +2029,7 @@ public final class LauncherApp extends Application {
                 case "client.preparingDownload" -> "Preparando descarga del cliente...";
                 case "client.startingDownload" -> "Iniciando descarga del cliente...";
                 case "client.downloadInitializing" -> "Inicializando descarga...";
+                case "client.receivingClientData" -> "Recibiendo datos... {downloaded} a {speed}";
                 case "client.downloading" -> "Descargando cliente... {percent} a {speed}";
                 case "client.verifying" -> "Verificando archivos del cliente...";
                 case "client.cleaningCancelled" -> "Eliminando archivos parciales...";
@@ -1924,6 +2040,9 @@ public final class LauncherApp extends Application {
                 case "client.warmupNetworkError" -> "La preparación de red encontró un error de conexión.";
                 case "client.warmupTorrent" -> "Preparando descubrimiento de fuentes para la descarga del cliente.";
                 case "client.warmupTorrentRegistered" -> "Torrent del cliente registrado para descubrimiento de fuentes.";
+                case "client.fixedSeedPeers" -> "Servidor seed fijo cargado: {count} endpoint(s).";
+                case "client.fixedSeedInvalid" -> "Servidor seed fijo ignorado por dirección inválida.";
+                case "client.fixedSeedResolveFailed" -> "No se pudo resolver el servidor seed fijo: {peer}";
                 case "client.warmupLookup" -> "Búsqueda de fuentes activa para la descarga del cliente.";
                 case "client.warmupStateLoaded" -> "Estado guardado de descubrimiento de fuentes cargado.";
                 case "client.warmupStateSaved" -> "Estado de descubrimiento de fuentes guardado.";
@@ -1939,11 +2058,13 @@ public final class LauncherApp extends Application {
                 case "client.peerConnected" -> "Conectado a una fuente de descarga.";
                 case "client.peersWaitingPieces" -> "Fuentes encontradas. Esperando partes disponibles...";
                 case "client.receivingBeforeProgress" -> "Recibiendo datos. El progreso avanzará tras validar las partes.";
+                case "client.receivedBeforeProgress" -> "Recibidos {downloaded} antes del progreso validado, {speed}, {seeds} seed(s), {connections} conexión(es).";
+                case "client.blocksBeforeProgress" -> "{blocks} bloque(s) descargado(s) antes del progreso validado.";
                 case "client.diskPreparing" -> "Preparando espacio en disco para los archivos del cliente...";
                 case "client.engineState" -> "Estado de la descarga: {state}";
                 case "client.discoveryNodes" -> "Nodos de descubrimiento encontrados: {count}";
                 case "client.listeningEndpoint" -> "Esperando conexiones de fuentes en {endpoint}";
-                case "client.healthCheck" -> "Salud de la descarga: {peers} fuente(s), {nodes} nodos de descubrimiento, {speed}";
+                case "client.healthCheck" -> "Salud de la descarga: {peers} fuente(s), {seeds} seed(s), {connections} conexión(es), {nodes} nodos, {speed}, {downloaded} recibidos";
                 case "client.noPeersYet" -> "El descubrimiento de fuentes está online, pero ninguna fuente descargable se conectó todavía.";
                 case "client.trackerHealth" -> "Salud de rastreadores: {replies} respuesta(s), {sources} fuente(s) informadas, {errors} rastreador(es) no disponibles.";
                 case "client.trackersLoaded" -> "{count} rastreador(es) cargados del torrent.";
@@ -1960,6 +2081,7 @@ public final class LauncherApp extends Application {
                 case "error.wowExeMissing" -> "Wow.exe no fue encontrado en {folder}";
                 case "error.wowAlreadyRunning" -> "Wow.exe ya está abierto.";
                 case "error.dataFolderMissing" -> "La carpeta Data no fue encontrada en {folder}";
+                case "error.notEnoughDiskSpace" -> "Espacio insuficiente. Necesario: {required}. Disponible: {available}.";
                 case "error.unknown" -> "error desconocido";
                 default -> key;
             };

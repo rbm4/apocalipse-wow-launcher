@@ -6,6 +6,13 @@ public record TorrentProgress(
         long downloadedBytes,
         long totalBytes,
         long downloadRateBytesPerSecond,
-        int peers
+        long payloadDownloadRateBytesPerSecond,
+        int peers,
+        long payloadDownloadedBytes,
+        long failedBytes,
+        long redundantBytes,
+        int seeds,
+        int connections,
+        long finishedBlocks
 ) {
 }

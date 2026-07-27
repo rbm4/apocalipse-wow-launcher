@@ -33,6 +33,10 @@ final class LauncherConfig {
         properties.setProperty(WOW_DIR, wowDirectory.toAbsolutePath().normalize().toString());
     }
 
+    void clearWowDirectory() {
+        properties.remove(WOW_DIR);
+    }
+
     String manifestUrl() {
         return properties.getProperty(MANIFEST_URL, defaults.manifestUrl()).trim();
     }
