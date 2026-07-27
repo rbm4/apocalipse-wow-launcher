@@ -6,16 +6,20 @@
 
     <groupId>cloud.apocalipse</groupId>
     <artifactId>apocalipse-wow-launcher</artifactId>
-    <version>0.1.0</version>
+    <version>0.1.3</version>
     <name>Apocalipse WoW Launcher</name>
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.release>25</maven.compiler.release>
         <javafx.version>25.0.1</javafx.version>
-        <launcher.mainClass>cloud.apocalipse.wow.launcher.LauncherApp</launcher.mainClass>
+        <launcher.mainClass>cloud.apocalipse.wow.launcher.LauncherMain</launcher.mainClass>
         <jpackage.appName>ApocalipseWoW</jpackage.appName>
         <jpackage.vendor>ApocalipseWoW</jpackage.vendor>
+        <jpackage.description>Apocalipse WoW Launcher. The installer creates a desktop shortcut.</jpackage.description>
+        <jpackage.icon>${project.basedir}/src/main/resources/Apocalipse_wow_icon.png</jpackage.icon>
+        <jpackage.debugLauncher>${project.basedir}/src/jpackage/ApocalipseWoWDebug.properties</jpackage.debugLauncher>
+        <jpackage.resourceDir>${project.basedir}/src/jpackage/resources</jpackage.resourceDir>
     </properties>
 
     <dependencies>
@@ -121,9 +125,14 @@
                                         <argument>--input</argument><argument>${project.build.directory}/launcher-input</argument>
                                         <argument>--name</argument><argument>${jpackage.appName}</argument>
                                         <argument>--vendor</argument><argument>${jpackage.vendor}</argument>
+                                        <argument>--description</argument><argument>${jpackage.description}</argument>
+                                        <argument>--icon</argument><argument>${jpackage.icon}</argument>
+                                        <argument>--resource-dir</argument><argument>${jpackage.resourceDir}</argument>
                                         <argument>--main-jar</argument><argument>${project.build.finalName}.jar</argument>
                                         <argument>--main-class</argument><argument>${launcher.mainClass}</argument>
+                                        <argument>--add-launcher</argument><argument>ApocalipseWoWDebug=${jpackage.debugLauncher}</argument>
                                         <argument>--java-options</argument><argument>-Dfile.encoding=UTF-8</argument>
+                                        <argument>--verbose</argument>
                                     </arguments>
                                 </configuration>
                             </execution>
@@ -153,12 +162,19 @@
                                         <argument>--input</argument><argument>${project.build.directory}/launcher-input</argument>
                                         <argument>--name</argument><argument>${jpackage.appName}</argument>
                                         <argument>--vendor</argument><argument>${jpackage.vendor}</argument>
+                                        <argument>--description</argument><argument>${jpackage.description}</argument>
+                                        <argument>--icon</argument><argument>${jpackage.icon}</argument>
+                                        <argument>--resource-dir</argument><argument>${jpackage.resourceDir}</argument>
                                         <argument>--app-version</argument><argument>${project.version}</argument>
                                         <argument>--main-jar</argument><argument>${project.build.finalName}.jar</argument>
                                         <argument>--main-class</argument><argument>${launcher.mainClass}</argument>
+                                        <argument>--add-launcher</argument><argument>ApocalipseWoWDebug=${jpackage.debugLauncher}</argument>
                                         <argument>--win-menu</argument>
+                                        <argument>--win-menu-group</argument><argument>Apocalipse WoW</argument>
                                         <argument>--win-shortcut</argument>
+                                        <argument>--win-shortcut-prompt</argument>
                                         <argument>--java-options</argument><argument>-Dfile.encoding=UTF-8</argument>
+                                        <argument>--verbose</argument>
                                     </arguments>
                                 </configuration>
                             </execution>
@@ -188,12 +204,19 @@
                                         <argument>--input</argument><argument>${project.build.directory}/launcher-input</argument>
                                         <argument>--name</argument><argument>${jpackage.appName}</argument>
                                         <argument>--vendor</argument><argument>${jpackage.vendor}</argument>
+                                        <argument>--description</argument><argument>${jpackage.description}</argument>
+                                        <argument>--icon</argument><argument>${jpackage.icon}</argument>
+                                        <argument>--resource-dir</argument><argument>${jpackage.resourceDir}</argument>
                                         <argument>--app-version</argument><argument>${project.version}</argument>
                                         <argument>--main-jar</argument><argument>${project.build.finalName}.jar</argument>
                                         <argument>--main-class</argument><argument>${launcher.mainClass}</argument>
+                                        <argument>--add-launcher</argument><argument>ApocalipseWoWDebug=${jpackage.debugLauncher}</argument>
                                         <argument>--win-menu</argument>
+                                        <argument>--win-menu-group</argument><argument>Apocalipse WoW</argument>
                                         <argument>--win-shortcut</argument>
+                                        <argument>--win-shortcut-prompt</argument>
                                         <argument>--java-options</argument><argument>-Dfile.encoding=UTF-8</argument>
+                                        <argument>--verbose</argument>
                                     </arguments>
                                 </configuration>
                             </execution>
