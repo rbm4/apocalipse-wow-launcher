@@ -42,7 +42,11 @@ import javafx.stage.Stage;
 import javafx.stage.StageStyle;
 
 import java.io.File;
+import java.io.PrintWriter;
+import java.io.StringWriter;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -50,6 +54,7 @@ import java.util.List;
 
 public final class LauncherApp extends Application {
     private static final String WEBSITE_URL = "https://wow.apocalipse.cloud/";
+    private static final DateTimeFormatter LOG_TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm:ss");
 
     private final LauncherDefaults defaults = LauncherDefaults.load();
     private final LauncherConfig config = new LauncherConfig(defaults);
@@ -114,95 +119,115 @@ public final class LauncherApp extends Application {
 
     @Override
     public void start(Stage stage) {
-        stage.initStyle(StageStyle.UNDECORATED);
-        language = AppLanguage.fromCode(config.language());
-        wowPathLabel = new Label();
-        refreshWowPathLabel();
+        try {
+            writeStartupLog("Starting launcher.", null);
+            stage.initStyle(StageStyle.UNDECORATED);
+            language = AppLanguage.fromCode(config.language());
+            wowPathLabel = new Label();
+            refreshWowPathLabel();
 
-        browseButton = new Button(t("button.chooseFolder"));
-        browseButton.getStyleClass().add("secondary-button");
-        browseButton.setOnAction(event -> chooseWowFolder(stage));
+            browseButton = new Button(t("button.chooseFolder"));
+            browseButton.getStyleClass().add("secondary-button");
+            browseButton.setOnAction(event -> chooseWowFolder(stage));
 
-        updateAndPlayButton = new Button(t("button.updatePlay"));
-        updateAndPlayButton.setDefaultButton(true);
-        updateAndPlayButton.getStyleClass().add("update-button");
-        updateAndPlayButton.setOnAction(event -> synchronize(true));
+            updateAndPlayButton = new Button(t("button.updatePlay"));
+            updateAndPlayButton.setDefaultButton(true);
+            updateAndPlayButton.getStyleClass().add("update-button");
+            updateAndPlayButton.setOnAction(event -> synchronize(true));
 
-        launchOptionsButton = new MenuButton(t("button.launchOptions"));
-        launchOptionsButton.getStyleClass().add("launch-options-button");
-        configureLaunchOptionsMenu();
-
-        progressBar = new ProgressBar(0);
-        progressBar.setMaxWidth(Double.MAX_VALUE);
-
-        statusLabel = new Label(t("status.ready"));
-
-        logArea = new TextArea();
-        logArea.setEditable(false);
-        logArea.setWrapText(true);
-        logArea.setPrefRowCount(5);
-        logArea.setMinHeight(88);
-        logArea.setPrefHeight(88);
-        logArea.setMaxHeight(88);
-        logArea.setVisible(false);
-        logArea.setManaged(false);
-        logArea.getStyleClass().add("details-log");
-
-        detailsLink = new Hyperlink(t("details.show"));
-        detailsLink.setPadding(Insets.EMPTY);
-        detailsLink.setOnAction(event -> toggleDetails());
-
-        launchProfileCombo = new ComboBox<>();
-        launchProfileCombo.getItems().addAll(LaunchProfile.values());
-        launchProfileCombo.setValue(LaunchProfile.fromId(config.launchProfile()));
-        configureLaunchProfileComboDisplay();
-        launchProfileCombo.setOnAction(event -> {
-            config.setLaunchProfile(launchProfileCombo.getValue().id());
-            saveConfig();
+            launchOptionsButton = new MenuButton(t("button.launchOptions"));
+            launchOptionsButton.getStyleClass().add("launch-options-button");
             configureLaunchOptionsMenu();
-        });
 
-        languageCombo = new ComboBox<>();
-        languageCombo.getItems().addAll(AppLanguage.values());
-        languageCombo.setValue(language);
-        languageCombo.setOnAction(event -> {
-            language = languageCombo.getValue();
-            config.setLanguage(language.code());
-            saveConfig();
-            refreshTexts();
-        });
+            progressBar = new ProgressBar(0);
+            progressBar.setMaxWidth(Double.MAX_VALUE);
 
-        tabs = new TabPane();
-        tabs.getStyleClass().add("main-tabs");
-        tabs.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
-        homeTab = new Tab(t("tab.home"), homeContent());
-        optionsTab = new Tab(t("tab.options"), optionsContent(stage));
-        websiteTab = new Tab(t("tab.website"), websiteContent());
-        tabs.getTabs().addAll(homeTab, optionsTab, websiteTab);
+            statusLabel = new Label(t("status.ready"));
 
-        StackPane tabSurface = tabSurface();
-        BorderPane root = new BorderPane();
-        root.setTop(titleBar(stage));
-        root.setCenter(tabSurface);
-        root.getStyleClass().add("root-shell");
+            logArea = new TextArea();
+            logArea.setEditable(false);
+            logArea.setWrapText(true);
+            logArea.setPrefRowCount(5);
+            logArea.setMinHeight(88);
+            logArea.setPrefHeight(88);
+            logArea.setMaxHeight(88);
+            logArea.setVisible(false);
+            logArea.setManaged(false);
+            logArea.getStyleClass().add("details-log");
 
-        Scene scene = new Scene(root, 1200, 760);
-        scene.getStylesheets().add(getClass().getResource("/launcher.css").toExternalForm());
-        stage.setTitle(t("window.title"));
-        stage.getIcons().add(new Image(getClass().getResourceAsStream("/Apocalipse_wow_icon.png")));
-        stage.setScene(scene);
-        stage.setMinWidth(1080);
-        stage.setMinHeight(680);
-        stage.show();
+            detailsLink = new Hyperlink(t("details.show"));
+            detailsLink.setPadding(Insets.EMPTY);
+            detailsLink.setOnAction(event -> toggleDetails());
 
-        log(t("log.launcherReady"));
-        startRealmStatusRefresh();
-        refreshNews();
-        if (config.wowDirectory().isEmpty()) {
-            Platform.runLater(() -> {
-                tabs.getSelectionModel().select(1);
-                chooseWowFolder(stage);
+            launchProfileCombo = new ComboBox<>();
+            launchProfileCombo.getItems().addAll(LaunchProfile.values());
+            launchProfileCombo.setValue(LaunchProfile.fromId(config.launchProfile()));
+            configureLaunchProfileComboDisplay();
+            launchProfileCombo.setOnAction(event -> {
+                config.setLaunchProfile(launchProfileCombo.getValue().id());
+                saveConfig();
+                configureLaunchOptionsMenu();
             });
+
+            languageCombo = new ComboBox<>();
+            languageCombo.getItems().addAll(AppLanguage.values());
+            languageCombo.setValue(language);
+            languageCombo.setOnAction(event -> {
+                language = languageCombo.getValue();
+                config.setLanguage(language.code());
+                saveConfig();
+                refreshTexts();
+            });
+
+            tabs = new TabPane();
+            tabs.getStyleClass().add("main-tabs");
+            tabs.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
+            homeTab = new Tab(t("tab.home"), homeContent());
+            optionsTab = new Tab(t("tab.options"), optionsContent(stage));
+            websiteTab = new Tab(t("tab.website"), websiteContent());
+            tabs.getTabs().addAll(homeTab, optionsTab, websiteTab);
+
+            StackPane tabSurface = tabSurface();
+            BorderPane root = new BorderPane();
+            root.setTop(titleBar(stage));
+            root.setCenter(tabSurface);
+            root.getStyleClass().add("root-shell");
+
+            Scene scene = new Scene(root, 1200, 760);
+            scene.getStylesheets().add(getClass().getResource("/launcher.css").toExternalForm());
+            stage.setTitle(t("window.title"));
+            stage.getIcons().add(new Image(getClass().getResourceAsStream("/Apocalipse_wow_icon.png")));
+            stage.setScene(scene);
+            stage.setMinWidth(1080);
+            stage.setMinHeight(680);
+            stage.centerOnScreen();
+            stage.setOnShown(event -> {
+                writeStartupLog("Launcher window shown.", null);
+                stage.toFront();
+                stage.requestFocus();
+            });
+            stage.show();
+
+            log(t("log.launcherReady"));
+            writeStartupLog("Launcher UI initialized.", null);
+            startRealmStatusRefresh();
+            refreshNews();
+            if (config.wowDirectory().isEmpty()) {
+                Platform.runLater(() -> {
+                    try {
+                        writeStartupLog("Prompting for WoW folder.", null);
+                        tabs.getSelectionModel().select(1);
+                        stage.toFront();
+                        chooseWowFolder(stage);
+                    } catch (RuntimeException exc) {
+                        writeStartupLog("WoW folder prompt failed.", exc);
+                        throw exc;
+                    }
+                });
+            }
+        } catch (RuntimeException exc) {
+            writeStartupLog("Launcher failed during JavaFX start().", exc);
+            throw exc;
         }
     }
 
@@ -828,7 +853,7 @@ public final class LauncherApp extends Application {
             case "offline" -> t("realm.offline");
             default -> t("realm.unavailable");
         });
-        realmUpdatedLabel.setText(t("realm.lastCheck") + ": " + LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss")));
+        realmUpdatedLabel.setText(t("realm.lastCheck") + ": " + LocalTime.now().format(LOG_TIME_FORMAT));
     }
 
     private void setStatusClass(javafx.scene.Node node, String status) {
@@ -869,7 +894,7 @@ public final class LauncherApp extends Application {
     }
 
     private void log(String message) {
-        String time = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss"));
+        String time = LocalTime.now().format(LOG_TIME_FORMAT);
         logArea.appendText("[" + time + "] " + message + System.lineSeparator());
     }
 
@@ -990,8 +1015,31 @@ public final class LauncherApp extends Application {
         return message;
     }
 
-    public static void main(String[] args) {
-        launch(args);
+    static void writeStartupLog(String message, Throwable throwable) {
+        try {
+            String localAppData = System.getenv("LOCALAPPDATA");
+            Path directory = localAppData == null || localAppData.isBlank()
+                    ? Path.of(System.getProperty("user.home"), ".apocalipse-wow-launcher")
+                    : Path.of(localAppData, "ApocalipseWoWLauncher");
+            Files.createDirectories(directory);
+            StringBuilder entry = new StringBuilder()
+                    .append(LocalTime.now().format(LOG_TIME_FORMAT))
+                    .append(" ")
+                    .append(message)
+                    .append(System.lineSeparator());
+            if (throwable != null) {
+                StringWriter stackTrace = new StringWriter();
+                throwable.printStackTrace(new PrintWriter(stackTrace));
+                entry.append(stackTrace);
+            }
+            Files.writeString(
+                    directory.resolve("launcher.log"),
+                    entry.toString(),
+                    StandardOpenOption.CREATE,
+                    StandardOpenOption.APPEND);
+        } catch (Exception ignored) {
+            // Last-resort diagnostics should never prevent the launcher from opening.
+        }
     }
 
     private record NewsCardSlot(VBox card, Label titleLabel, Label bodyLabel, ImageView imageView) {

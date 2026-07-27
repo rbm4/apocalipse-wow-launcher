@@ -36,10 +36,49 @@ function Invoke-LoggedCommand {
     )
 
     Write-Host "Running: $FilePath $($Arguments -join ' ')"
-    & $FilePath @Arguments 2>&1 | Tee-Object -FilePath $LogPath
-    $exitCode = $LASTEXITCODE
+    $previousErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    $exitCode = 1
+    try {
+        & $FilePath @Arguments 2>&1 | ForEach-Object { "$_" } | Tee-Object -FilePath $LogPath
+        $exitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
     if ($exitCode -ne 0) {
         throw "$FilePath failed with exit code $exitCode. See $LogPath"
+    }
+}
+
+function New-WindowsIcon {
+    param(
+        [string]$SourcePath,
+        [string]$DestinationPath
+    )
+
+    $resolvedSource = Resolve-Path -LiteralPath $SourcePath
+    $destinationDirectory = Split-Path -Parent $DestinationPath
+    New-Item -ItemType Directory -Force -Path $destinationDirectory | Out-Null
+
+    $pngBytes = [System.IO.File]::ReadAllBytes($resolvedSource)
+    $fileStream = [System.IO.File]::Open($DestinationPath, [System.IO.FileMode]::Create)
+    $writer = New-Object System.IO.BinaryWriter($fileStream)
+    try {
+        $writer.Write([UInt16]0)
+        $writer.Write([UInt16]1)
+        $writer.Write([UInt16]1)
+        $writer.Write([byte]0)
+        $writer.Write([byte]0)
+        $writer.Write([byte]0)
+        $writer.Write([byte]0)
+        $writer.Write([UInt16]1)
+        $writer.Write([UInt16]32)
+        $writer.Write([UInt32]$pngBytes.Length)
+        $writer.Write([UInt32]22)
+        $writer.Write($pngBytes)
+    } finally {
+        $writer.Dispose()
+        $fileStream.Dispose()
     }
 }
 
@@ -278,7 +317,7 @@ if (-not $isWindowsPlatform) {
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $scriptRoot
 
-New-Item -ItemType Directory -Force -Path ".local-release\logs", ".local-release\msi" | Out-Null
+New-Item -ItemType Directory -Force -Path ".local-release\logs", ".local-release\msi", ".local-release\resources" | Out-Null
 
 Ensure-Command "java" "Install JDK 25 and make sure java.exe is on PATH." "temurin25" "EclipseAdoptium.Temurin.25.JDK" $SkipDependencyInstall
 Ensure-Command "jpackage" "Install JDK 25 and make sure jpackage.exe is on PATH." "temurin25" "EclipseAdoptium.Temurin.25.JDK" $SkipDependencyInstall
@@ -300,11 +339,29 @@ if ($Version) {
 
 $projectVersion = Get-ProjectVersion
 $buildLog = Join-Path ".local-release\logs" "msi-build-$projectVersion.log"
+$iconPath = Join-Path ".local-release\resources" "ApocalipseWoW.ico"
+New-WindowsIcon `
+    -SourcePath "src\main\resources\Apocalipse_wow_icon.png" `
+    -DestinationPath $iconPath
+$resolvedIconPath = (Resolve-Path -LiteralPath $iconPath).Path
 
-Invoke-LoggedCommand `
-    -LogPath $buildLog `
-    -FilePath "mvn" `
-    -Arguments @("--batch-mode", "--no-transfer-progress", "clean", "verify", "-Pjpackage-msi")
+try {
+    Invoke-LoggedCommand `
+        -LogPath $buildLog `
+        -FilePath "mvn" `
+        -Arguments @("--batch-mode", "--no-transfer-progress", "clean", "verify", "-Pjpackage-msi", "-Djpackage.icon=$resolvedIconPath")
+} catch {
+    $buildLogText = Get-Content -LiteralPath $buildLog -Raw -ErrorAction SilentlyContinue
+    if ($buildLogText -notlike "*The configured main jar does not exist*") {
+        throw
+    }
+
+    Write-Host "jpackage did not see the copied main jar immediately after clean. Retrying without clean..."
+    Invoke-LoggedCommand `
+        -LogPath $buildLog `
+        -FilePath "mvn" `
+        -Arguments @("--batch-mode", "--no-transfer-progress", "verify", "-Pjpackage-msi", "-Djpackage.icon=$resolvedIconPath")
+}
 
 $msi = Get-ChildItem -Path "target\jpackage" -Filter "*.msi" -File -Recurse -ErrorAction SilentlyContinue |
     Sort-Object -Property LastWriteTime -Descending |
@@ -318,6 +375,9 @@ $releaseMsi = Join-Path ".local-release\msi" $msi.Name
 Copy-Item -LiteralPath $msi.FullName -Destination $releaseMsi -Force
 Write-Host "MSI copied to: $releaseMsi"
 Write-Host "Build log: $buildLog"
+Write-Host "The installer is configured to create a desktop shortcut at: $([Environment]::GetFolderPath('CommonDesktopDirectory'))\ApocalipseWoW.lnk"
+Write-Host "A diagnostic console launcher is installed at: C:\Program Files\ApocalipseWoW\ApocalipseWoWDebug.exe"
+Write-Host "If the shortcut opens nothing, inspect: $env:LOCALAPPDATA\ApocalipseWoWLauncher\launcher.log"
 
 if (-not $Release) {
     $Release = Prompt-YesNo "Create or update a GitHub release with this MSI?"
