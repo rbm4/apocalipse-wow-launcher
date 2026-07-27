@@ -10,6 +10,8 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
+import java.util.HashSet;
+import java.util.Set;
 
 public final class ClientInstallManager {
     private static final String TORRENT_RESOURCE = "/WoWBrasil.torrent";
@@ -19,22 +21,30 @@ public final class ClientInstallManager {
 
     private final ClientInstallPaths paths;
     private final TorrentDownloadService torrentDownloadService;
+    private final Path torrentStateDirectory;
     private volatile boolean cancelRequested;
     private volatile Path activeDownloadDestination;
+    private volatile Path warmupTorrentFile;
+    private Set<Path> preexistingDownloadPaths = Set.of();
     private long lastProgressEmitNanos;
     private int lastProgressPercent = -1;
     private long lastSpeedBucket = -1;
     private String lastProgressMessage = "";
 
-    public ClientInstallManager(ClientInstallPaths paths, TorrentDownloadService torrentDownloadService) {
+    public ClientInstallManager(ClientInstallPaths paths, TorrentDownloadService torrentDownloadService, Path torrentStateDirectory) {
         this.paths = paths;
         this.torrentDownloadService = torrentDownloadService;
+        this.torrentStateDirectory = torrentStateDirectory.toAbsolutePath().normalize();
     }
 
     public Path installFromBundledTorrent(PatchProgress progress) throws Exception {
+        return installFromBundledTorrent(paths.defaultClientDirectory(), progress);
+    }
+
+    public Path installFromBundledTorrent(Path destination, PatchProgress progress) throws Exception {
         cancelRequested = false;
         resetProgressThrottle();
-        Path destination = paths.defaultClientDirectory();
+        destination = destination.toAbsolutePath().normalize();
         Path existing = findWowDirectory(destination);
         if (existing != null) {
             progress.message("Client already installed: " + existing);
@@ -45,10 +55,22 @@ public final class ClientInstallManager {
         progress.message("Preparing client download...");
         progress.progress(0);
         Files.createDirectories(destination);
+        preexistingDownloadPaths = snapshotExistingPaths(destination);
         activeDownloadDestination = destination;
+        stopWarmup(false);
         Path torrentFile = copyBundledTorrentToTemp();
         try {
-            torrentDownloadService.download(torrentFile, destination, torrentProgress -> reportTorrentProgress(progress, torrentProgress));
+            torrentDownloadService.download(torrentFile, destination, torrentStateDirectory, new cloud.apocalipse.wow.launcher.torrent.TorrentProgressListener() {
+                @Override
+                public void onProgress(TorrentProgress torrentProgress) {
+                    reportTorrentProgress(progress, torrentProgress);
+                }
+
+                @Override
+                public void onStatusMessage(String message) {
+                    progress.detail(message);
+                }
+            });
             checkCancelled();
         } catch (Exception exc) {
             if (cancelRequested) {
@@ -63,6 +85,7 @@ public final class ClientInstallManager {
                 deleteDownloadedAssets(destination);
             }
             activeDownloadDestination = null;
+            preexistingDownloadPaths = Set.of();
         }
 
         progress.message("Verifying client files...");
@@ -82,6 +105,44 @@ public final class ClientInstallManager {
     public void cancelInstall() {
         cancelRequested = true;
         torrentDownloadService.stop();
+    }
+
+    public void startWarmup(PatchProgress progress) throws IOException {
+        Path torrentFile = copyBundledTorrentToTemp();
+        warmupTorrentFile = torrentFile;
+        try {
+            torrentDownloadService.startWarmup(torrentFile, torrentStateDirectory, new cloud.apocalipse.wow.launcher.torrent.TorrentProgressListener() {
+                @Override
+                public void onProgress(TorrentProgress torrentProgress) {
+                }
+
+                @Override
+                public void onStatusMessage(String message) {
+                    progress.detail(message);
+                }
+            });
+        } catch (Exception exc) {
+            Files.deleteIfExists(torrentFile);
+            warmupTorrentFile = null;
+            throw new IOException("Client download warm-up failed.", exc);
+        }
+    }
+
+    public void stopWarmup() throws IOException {
+        stopWarmup(true);
+    }
+
+    private void stopWarmup(boolean announceStop) throws IOException {
+        torrentDownloadService.stopWarmup(announceStop);
+        Path torrentFile = warmupTorrentFile;
+        warmupTorrentFile = null;
+        if (torrentFile != null) {
+            Files.deleteIfExists(torrentFile);
+        }
+    }
+
+    public Path defaultInstallDirectory() {
+        return paths.defaultClientDirectory();
     }
 
     private Path copyBundledTorrentToTemp() throws IOException {
@@ -168,9 +229,23 @@ public final class ClientInstallManager {
         }
         try (var stream = Files.walk(destination)) {
             for (Path path : stream.sorted(Comparator.reverseOrder()).toList()) {
-                Files.deleteIfExists(path);
+                Path relativePath = destination.relativize(path);
+                if (!preexistingDownloadPaths.contains(relativePath)) {
+                    Files.deleteIfExists(path);
+                }
             }
         }
+    }
+
+    private Set<Path> snapshotExistingPaths(Path destination) throws IOException {
+        if (!Files.exists(destination)) {
+            return Set.of();
+        }
+        Set<Path> paths = new HashSet<>();
+        try (var stream = Files.walk(destination)) {
+            stream.forEach(path -> paths.add(destination.relativize(path)));
+        }
+        return paths;
     }
 
     private static String formatPercent(double value) {

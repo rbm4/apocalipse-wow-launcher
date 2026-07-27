@@ -63,9 +63,11 @@ public final class LauncherApp extends Application {
     private final LauncherConfig config = new LauncherConfig(defaults);
     private final PatchManager patchManager = new PatchManager();
     private final GameLauncher gameLauncher = new GameLauncher(defaults.wowExecutable());
+    private final JlibtorrentDownloadService torrentDownloadService = new JlibtorrentDownloadService();
     private final ClientInstallManager clientInstallManager = new ClientInstallManager(
             new ClientInstallPaths(),
-            new JlibtorrentDownloadService()
+            torrentDownloadService,
+            config.appDataDirectory().resolve("torrent")
     );
     private final RealmStatusClient realmStatusClient = new RealmStatusClient();
     private final NewsClient newsClient = new NewsClient();
@@ -156,7 +158,7 @@ public final class LauncherApp extends Application {
 
             installClientButton = new Button(t("button.downloadClient"));
             installClientButton.getStyleClass().add("secondary-button");
-            installClientButton.setOnAction(event -> installClientAndPlay());
+            installClientButton.setOnAction(event -> installClientAndPlay(stage));
 
             launchOptionsButton = new MenuButton(t("button.launchOptions"));
             launchOptionsButton.getStyleClass().add("launch-options-button");
@@ -239,6 +241,7 @@ public final class LauncherApp extends Application {
 
             log(t("log.launcherReady"));
             writeStartupLog("Launcher UI initialized.", null);
+            startClientDownloadWarmup();
             startRealmStatusRefresh();
             refreshNews();
             if (config.wowDirectory().isEmpty()) {
@@ -256,6 +259,15 @@ public final class LauncherApp extends Application {
         } catch (RuntimeException exc) {
             writeStartupLog("Launcher failed during JavaFX start().", exc);
             throw exc;
+        }
+    }
+
+    @Override
+    public void stop() {
+        try {
+            clientInstallManager.stopWarmup();
+        } catch (Exception exc) {
+            writeStartupLog("Client download warm-up shutdown failed.", exc);
         }
     }
 
@@ -633,7 +645,7 @@ public final class LauncherApp extends Application {
 
         setupDownloadButton = new Button(t("button.downloadClient"));
         setupDownloadButton.getStyleClass().add("update-button");
-        setupDownloadButton.setOnAction(event -> installClientAndPlay());
+        setupDownloadButton.setOnAction(event -> installClientAndPlay(stage));
 
         setupExistingButton = new Button(t("button.useExistingClient"));
         setupExistingButton.getStyleClass().add("secondary-button");
@@ -758,20 +770,26 @@ public final class LauncherApp extends Application {
         thread.start();
     }
 
-    private void installClientAndPlay() {
+    private void installClientAndPlay(Stage stage) {
         if (gameLauncher.isRunning()) {
             setGameRunning(true);
             log(t("log.gameAlreadyRunning"));
             return;
         }
 
+        Path installDirectory = chooseClientInstallFolder(stage);
+        if (installDirectory == null) {
+            return;
+        }
+
+        tabs.getSelectionModel().select(homeTab);
         patchVerified = false;
         setClientInstallInProgress(true);
         setWorking(true);
         Task<Path> task = new Task<>() {
             @Override
             protected Path call() throws Exception {
-                return clientInstallManager.installFromBundledTorrent(new PatchProgress() {
+                return clientInstallManager.installFromBundledTorrent(installDirectory, new PatchProgress() {
                     @Override
                     public void message(String message) {
                         String translatedMessage = translateClientInstallMessage(message);
@@ -782,6 +800,12 @@ public final class LauncherApp extends Application {
                     @Override
                     public void progress(double value) {
                         updateProgress(value, 1);
+                    }
+
+                    @Override
+                    public void detail(String message) {
+                        String translatedMessage = translateClientInstallMessage(message);
+                        Platform.runLater(() -> log(translatedMessage));
                     }
                 });
             }
@@ -819,6 +843,46 @@ public final class LauncherApp extends Application {
         });
 
         Thread thread = new Thread(task, "client-install");
+        thread.setDaemon(true);
+        thread.start();
+    }
+
+    private Path chooseClientInstallFolder(Stage stage) {
+        DirectoryChooser chooser = new DirectoryChooser();
+        chooser.setTitle(t("dialog.selectClientInstallFolder"));
+        Path initialDirectory = clientInstallManager.defaultInstallDirectory();
+        if (!Files.isDirectory(initialDirectory)) {
+            initialDirectory = initialDirectory.getParent();
+        }
+        if (initialDirectory != null && Files.isDirectory(initialDirectory)) {
+            chooser.setInitialDirectory(initialDirectory.toFile());
+        }
+        File selected = chooser.showDialog(stage);
+        return selected == null ? null : selected.toPath().toAbsolutePath().normalize();
+    }
+
+    private void startClientDownloadWarmup() {
+        Thread thread = new Thread(() -> {
+            try {
+                clientInstallManager.startWarmup(new PatchProgress() {
+                    @Override
+                    public void message(String message) {
+                    }
+
+                    @Override
+                    public void progress(double value) {
+                    }
+
+                    @Override
+                    public void detail(String message) {
+                        String translatedMessage = translateClientInstallMessage(message);
+                        Platform.runLater(() -> log(translatedMessage));
+                    }
+                });
+            } catch (Exception exc) {
+                Platform.runLater(() -> log(t("log.clientWarmupFailed") + ": " + translateErrorMessage(exc.getMessage())));
+            }
+        }, "apocalipse-wow-client-warmup-start");
         thread.setDaemon(true);
         thread.start();
     }
@@ -1262,7 +1326,135 @@ public final class LauncherApp extends Application {
         if (message.startsWith("Client download complete: ")) {
             return t("client.complete").replace("{folder}", message.substring("Client download complete: ".length()));
         }
+        if (message.equals("Peer discovery warm-up started.")) {
+            return t("client.warmupStarted");
+        }
+        if (message.equals("Peer discovery warm-up stopped.")) {
+            return t("client.warmupStopped");
+        }
+        if (message.equals("Peer discovery warm-up stopped after a network error.")
+                || message.equals("Peer discovery warm-up reported a network error.")) {
+            return t("client.warmupNetworkError");
+        }
+        if (message.equals("Warming peer discovery for bundled client torrent.")) {
+            return t("client.warmupTorrent");
+        }
+        if (message.equals("Client torrent registered for source discovery.")) {
+            return t("client.warmupTorrentRegistered");
+        }
+        if (message.equals("Peer discovery lookup is active for the client download.")) {
+            return t("client.warmupLookup");
+        }
+        if (message.equals("Loaded saved peer discovery state.")) {
+            return t("client.warmupStateLoaded");
+        }
+        if (message.equals("Saved peer discovery state.")) {
+            return t("client.warmupStateSaved");
+        }
+        if (message.equals("Saved peer discovery state could not be loaded.")) {
+            return t("client.warmupStateLoadFailed");
+        }
+        if (message.equals("Peer discovery state could not be saved.")) {
+            return t("client.warmupStateSaveFailed");
+        }
+        if (message.equals("Client download registered. Warming up network...")) {
+            return t("client.networkRegistered");
+        }
+        if (message.equals("Network listener ready.")) {
+            return t("client.networkListening");
+        }
+        if (message.equals("Peer discovery network ready.")) {
+            return t("client.dhtReady");
+        }
+        if (message.startsWith("Tracker found ") && (message.endsWith(" peer.") || message.endsWith(" peers."))) {
+            String count = message.substring("Tracker found ".length(), message.indexOf(" peer"));
+            return t("client.trackerPeers").replace("{count}", count);
+        }
+        if (message.equals("Tracker answered. Waiting for available peers...")) {
+            return t("client.trackerWaiting");
+        }
+        if (message.equals("Some trackers are unavailable. Trying alternate sources...")) {
+            return t("client.trackerAlternates");
+        }
+        if (message.equals("A tracker was unavailable. Trying other trackers and peer discovery...")) {
+            return t("client.trackerFirstUnavailable");
+        }
+        if (message.equals("Connected to a download peer.")) {
+            return t("client.peerConnected");
+        }
+        if (message.equals("Found peers. Waiting for downloadable pieces...")) {
+            return t("client.peersWaitingPieces");
+        }
+        if (message.equals("Receiving data. Progress will move after pieces verify.")) {
+            return t("client.receivingBeforeProgress");
+        }
+        if (message.equals("Preparing disk allocation for client files...")) {
+            return t("client.diskPreparing");
+        }
+        if (message.startsWith("Download engine state: ")) {
+            return t("client.engineState")
+                    .replace("{state}", translateTorrentEngineState(message.substring("Download engine state: ".length())));
+        }
+        if (message.startsWith("Peer discovery nodes: ")) {
+            return t("client.discoveryNodes").replace("{count}", message.substring("Peer discovery nodes: ".length()));
+        }
+        if (message.startsWith("Listening for peer connections on ")) {
+            return t("client.listeningEndpoint").replace("{endpoint}", message.substring("Listening for peer connections on ".length()));
+        }
+        if (message.startsWith("Download health: ")) {
+            String details = message.substring("Download health: ".length());
+            java.util.regex.Matcher matcher = java.util.regex.Pattern
+                    .compile("(\\d+) peers?, (\\d+) discovery nodes, (.+)")
+                    .matcher(details);
+            if (matcher.matches()) {
+                return t("client.healthCheck")
+                        .replace("{peers}", matcher.group(1))
+                        .replace("{nodes}", matcher.group(2))
+                        .replace("{speed}", matcher.group(3));
+            }
+            return details;
+        }
+        if (message.equals("Peer discovery is online, but no downloadable sources have connected yet.")) {
+            return t("client.noPeersYet");
+        }
+        if (message.startsWith("Tracker health: ")) {
+            java.util.regex.Matcher matcher = java.util.regex.Pattern
+                    .compile("(\\d+) replies, (\\d+) reported sources, (\\d+) unavailable trackers\\.")
+                    .matcher(message.substring("Tracker health: ".length()));
+            if (matcher.matches()) {
+                return t("client.trackerHealth")
+                        .replace("{replies}", matcher.group(1))
+                        .replace("{sources}", matcher.group(2))
+                        .replace("{errors}", matcher.group(3));
+            }
+        }
+        if (message.startsWith("Loaded ") && message.endsWith(" tracker entries from torrent.")) {
+            String count = message.substring("Loaded ".length(), message.indexOf(" tracker entries"));
+            return t("client.trackersLoaded").replace("{count}", count);
+        }
+        if (message.equals("Requested immediate announce to all trackers and peer discovery.")
+                || message.equals("Requested immediate tracker and peer discovery announce.")) {
+            return t("client.forceAnnounce");
+        }
+        if (message.equals("Requested immediate peer discovery announce.")) {
+            return t("client.forcePeerDiscovery");
+        }
+        if (message.equals("Could not request immediate peer discovery announce.")) {
+            return t("client.forceAnnounceFailed");
+        }
         return message;
+    }
+
+    private String translateTorrentEngineState(String state) {
+        return switch (state) {
+            case "CHECKING_FILES" -> t("client.stateCheckingFiles");
+            case "DOWNLOADING_METADATA" -> t("client.stateDownloadingMetadata");
+            case "DOWNLOADING" -> t("client.stateDownloading");
+            case "FINISHED" -> t("client.stateFinished");
+            case "SEEDING" -> t("client.stateSeeding");
+            case "CHECKING_RESUME_DATA" -> t("client.stateCheckingResume");
+            default -> state;
+        };
     }
 
     private String translateErrorMessage(String message) {
@@ -1414,6 +1606,7 @@ public final class LauncherApp extends Application {
                 case "profile.console" -> "Console ativado";
                 case "profile.windowedConsole" -> "Janela + console";
                 case "dialog.selectWowFolder" -> "Selecionar pasta do World of Warcraft";
+                case "dialog.selectClientInstallFolder" -> "Selecionar pasta para instalar o cliente";
                 case "log.launchProfileSelected" -> "Perfil de execução selecionado";
                 case "log.selectedWowFolder" -> "Pasta do WoW selecionada";
                 case "log.selectWowFolderFirst" -> "Selecione sua pasta do WoW primeiro.";
@@ -1424,6 +1617,7 @@ public final class LauncherApp extends Application {
                 case "log.gameClosed" -> "Wow.exe foi fechado.";
                 case "log.clientInstalled" -> "Cliente instalado";
                 case "log.clientInstallFailed" -> "Falha ao baixar cliente";
+                case "log.clientWarmupFailed" -> "A preparação da rede de download falhou";
                 case "log.clientDownloadCancelRequested" -> "Cancelando download do cliente...";
                 case "log.clientDownloadCancelled" -> "Download do cliente cancelado. Arquivos parciais removidos.";
                 case "log.realmUnavailable" -> "Status do reino indisponível";
@@ -1445,6 +1639,43 @@ public final class LauncherApp extends Application {
                 case "client.cleaningCancelled" -> "Removendo arquivos parciais...";
                 case "client.downloadComplete" -> "Download do cliente concluído.";
                 case "client.complete" -> "Cliente pronto: {folder}";
+                case "client.warmupStarted" -> "Preparação da rede de fontes iniciada.";
+                case "client.warmupStopped" -> "Preparação da rede de fontes pausada.";
+                case "client.warmupNetworkError" -> "A preparação da rede encontrou um erro de conexão.";
+                case "client.warmupTorrent" -> "Preparando descoberta de fontes para o download do cliente.";
+                case "client.warmupTorrentRegistered" -> "Torrent do cliente registrado para descoberta de fontes.";
+                case "client.warmupLookup" -> "Busca de fontes ativa para o download do cliente.";
+                case "client.warmupStateLoaded" -> "Estado salvo de descoberta de fontes carregado.";
+                case "client.warmupStateSaved" -> "Estado de descoberta de fontes salvo.";
+                case "client.warmupStateLoadFailed" -> "Não foi possível carregar o estado salvo de descoberta de fontes.";
+                case "client.warmupStateSaveFailed" -> "Não foi possível salvar o estado de descoberta de fontes.";
+                case "client.networkRegistered" -> "Download registrado. Preparando rede...";
+                case "client.networkListening" -> "Conexão de rede pronta.";
+                case "client.dhtReady" -> "Descoberta de pares pronta.";
+                case "client.trackerPeers" -> "Rastreador encontrou {count} fonte(s).";
+                case "client.trackerWaiting" -> "Rastreador respondeu. Aguardando fontes disponíveis...";
+                case "client.trackerAlternates" -> "Alguns rastreadores estão indisponíveis. Tentando fontes alternativas...";
+                case "client.trackerFirstUnavailable" -> "Um rastreador está indisponível. Tentando outros rastreadores e descoberta de fontes...";
+                case "client.peerConnected" -> "Conectado a uma fonte de download.";
+                case "client.peersWaitingPieces" -> "Fontes encontradas. Aguardando partes disponíveis...";
+                case "client.receivingBeforeProgress" -> "Recebendo dados. O progresso avança após validar as partes.";
+                case "client.diskPreparing" -> "Preparando espaço em disco para os arquivos do cliente...";
+                case "client.engineState" -> "Estado do download: {state}";
+                case "client.discoveryNodes" -> "Nós de descoberta encontrados: {count}";
+                case "client.listeningEndpoint" -> "Aguardando conexões de fontes em {endpoint}";
+                case "client.healthCheck" -> "Saúde do download: {peers} fonte(s), {nodes} nós de descoberta, {speed}";
+                case "client.noPeersYet" -> "A descoberta de fontes está online, mas nenhuma fonte baixável conectou ainda.";
+                case "client.trackerHealth" -> "Saúde dos rastreadores: {replies} resposta(s), {sources} fonte(s) informadas, {errors} rastreador(es) indisponíveis.";
+                case "client.trackersLoaded" -> "{count} rastreador(es) carregados do torrent.";
+                case "client.forceAnnounce" -> "Solicitando descoberta imediata de fontes.";
+                case "client.forcePeerDiscovery" -> "Solicitando descoberta imediata por pares.";
+                case "client.forceAnnounceFailed" -> "Não foi possível solicitar descoberta imediata de fontes.";
+                case "client.stateCheckingFiles" -> "verificando arquivos";
+                case "client.stateDownloadingMetadata" -> "buscando metadados";
+                case "client.stateDownloading" -> "baixando";
+                case "client.stateFinished" -> "finalizado";
+                case "client.stateSeeding" -> "concluído";
+                case "client.stateCheckingResume" -> "verificando retomada";
                 case "error.validWowFolder" -> "Selecione uma pasta válida do World of Warcraft.";
                 case "error.wowExeMissing" -> "Wow.exe não foi encontrado em {folder}";
                 case "error.wowAlreadyRunning" -> "Wow.exe já está aberto.";
@@ -1515,6 +1746,7 @@ public final class LauncherApp extends Application {
                 case "profile.console" -> "Console enabled";
                 case "profile.windowedConsole" -> "Windowed + console";
                 case "dialog.selectWowFolder" -> "Select World of Warcraft Folder";
+                case "dialog.selectClientInstallFolder" -> "Select Client Install Folder";
                 case "log.launchProfileSelected" -> "Launch profile selected";
                 case "log.selectedWowFolder" -> "Selected WoW folder";
                 case "log.selectWowFolderFirst" -> "Select your WoW folder first.";
@@ -1525,6 +1757,7 @@ public final class LauncherApp extends Application {
                 case "log.gameClosed" -> "Wow.exe closed.";
                 case "log.clientInstalled" -> "Client installed";
                 case "log.clientInstallFailed" -> "Client download failed";
+                case "log.clientWarmupFailed" -> "Download network warm-up failed";
                 case "log.clientDownloadCancelRequested" -> "Cancelling client download...";
                 case "log.clientDownloadCancelled" -> "Client download cancelled. Partial files removed.";
                 case "log.realmUnavailable" -> "Realm status unavailable";
@@ -1546,6 +1779,43 @@ public final class LauncherApp extends Application {
                 case "client.cleaningCancelled" -> "Removing partial files...";
                 case "client.downloadComplete" -> "Client download complete.";
                 case "client.complete" -> "Client ready: {folder}";
+                case "client.warmupStarted" -> "Source network warm-up started.";
+                case "client.warmupStopped" -> "Source network warm-up paused.";
+                case "client.warmupNetworkError" -> "Source network warm-up hit a connection error.";
+                case "client.warmupTorrent" -> "Warming source discovery for the client download.";
+                case "client.warmupTorrentRegistered" -> "Client torrent registered for source discovery.";
+                case "client.warmupLookup" -> "Source lookup is active for the client download.";
+                case "client.warmupStateLoaded" -> "Loaded saved source discovery state.";
+                case "client.warmupStateSaved" -> "Saved source discovery state.";
+                case "client.warmupStateLoadFailed" -> "Could not load saved source discovery state.";
+                case "client.warmupStateSaveFailed" -> "Could not save source discovery state.";
+                case "client.networkRegistered" -> "Download registered. Warming up network...";
+                case "client.networkListening" -> "Network listener ready.";
+                case "client.dhtReady" -> "Peer discovery network ready.";
+                case "client.trackerPeers" -> "Tracker found {count} source(s).";
+                case "client.trackerWaiting" -> "Tracker answered. Waiting for available sources...";
+                case "client.trackerAlternates" -> "Some trackers are unavailable. Trying alternate sources...";
+                case "client.trackerFirstUnavailable" -> "A tracker is unavailable. Trying other trackers and peer discovery...";
+                case "client.peerConnected" -> "Connected to a download source.";
+                case "client.peersWaitingPieces" -> "Sources found. Waiting for downloadable pieces...";
+                case "client.receivingBeforeProgress" -> "Receiving data. Progress will move after pieces verify.";
+                case "client.diskPreparing" -> "Preparing disk space for client files...";
+                case "client.engineState" -> "Download state: {state}";
+                case "client.discoveryNodes" -> "Peer discovery nodes found: {count}";
+                case "client.listeningEndpoint" -> "Listening for source connections on {endpoint}";
+                case "client.healthCheck" -> "Download health: {peers} source(s), {nodes} discovery nodes, {speed}";
+                case "client.noPeersYet" -> "Peer discovery is online, but no downloadable sources have connected yet.";
+                case "client.trackerHealth" -> "Tracker health: {replies} reply/replies, {sources} reported source(s), {errors} unavailable tracker(s).";
+                case "client.trackersLoaded" -> "Loaded {count} tracker(s) from torrent.";
+                case "client.forceAnnounce" -> "Requesting immediate source discovery.";
+                case "client.forcePeerDiscovery" -> "Requesting immediate peer discovery.";
+                case "client.forceAnnounceFailed" -> "Could not request immediate source discovery.";
+                case "client.stateCheckingFiles" -> "checking files";
+                case "client.stateDownloadingMetadata" -> "finding metadata";
+                case "client.stateDownloading" -> "downloading";
+                case "client.stateFinished" -> "finished";
+                case "client.stateSeeding" -> "complete";
+                case "client.stateCheckingResume" -> "checking resume data";
                 case "error.validWowFolder" -> "Select a valid World of Warcraft folder.";
                 case "error.wowExeMissing" -> "Wow.exe was not found in {folder}";
                 case "error.wowAlreadyRunning" -> "Wow.exe is already running.";
@@ -1616,6 +1886,7 @@ public final class LauncherApp extends Application {
                 case "profile.console" -> "Consola activada";
                 case "profile.windowedConsole" -> "Ventana + consola";
                 case "dialog.selectWowFolder" -> "Seleccionar carpeta de World of Warcraft";
+                case "dialog.selectClientInstallFolder" -> "Seleccionar carpeta para instalar el cliente";
                 case "log.launchProfileSelected" -> "Perfil de inicio seleccionado";
                 case "log.selectedWowFolder" -> "Carpeta de WoW seleccionada";
                 case "log.selectWowFolderFirst" -> "Selecciona primero tu carpeta de WoW.";
@@ -1626,6 +1897,7 @@ public final class LauncherApp extends Application {
                 case "log.gameClosed" -> "Wow.exe fue cerrado.";
                 case "log.clientInstalled" -> "Cliente instalado";
                 case "log.clientInstallFailed" -> "Error al descargar cliente";
+                case "log.clientWarmupFailed" -> "Error al preparar la red de descarga";
                 case "log.clientDownloadCancelRequested" -> "Cancelando descarga del cliente...";
                 case "log.clientDownloadCancelled" -> "Descarga del cliente cancelada. Archivos parciales eliminados.";
                 case "log.realmUnavailable" -> "Estado del reino no disponible";
@@ -1647,6 +1919,43 @@ public final class LauncherApp extends Application {
                 case "client.cleaningCancelled" -> "Eliminando archivos parciales...";
                 case "client.downloadComplete" -> "Descarga del cliente completada.";
                 case "client.complete" -> "Cliente listo: {folder}";
+                case "client.warmupStarted" -> "Preparación de red de fuentes iniciada.";
+                case "client.warmupStopped" -> "Preparación de red de fuentes pausada.";
+                case "client.warmupNetworkError" -> "La preparación de red encontró un error de conexión.";
+                case "client.warmupTorrent" -> "Preparando descubrimiento de fuentes para la descarga del cliente.";
+                case "client.warmupTorrentRegistered" -> "Torrent del cliente registrado para descubrimiento de fuentes.";
+                case "client.warmupLookup" -> "Búsqueda de fuentes activa para la descarga del cliente.";
+                case "client.warmupStateLoaded" -> "Estado guardado de descubrimiento de fuentes cargado.";
+                case "client.warmupStateSaved" -> "Estado de descubrimiento de fuentes guardado.";
+                case "client.warmupStateLoadFailed" -> "No se pudo cargar el estado guardado de descubrimiento de fuentes.";
+                case "client.warmupStateSaveFailed" -> "No se pudo guardar el estado de descubrimiento de fuentes.";
+                case "client.networkRegistered" -> "Descarga registrada. Preparando red...";
+                case "client.networkListening" -> "Conexión de red lista.";
+                case "client.dhtReady" -> "Descubrimiento de pares listo.";
+                case "client.trackerPeers" -> "Rastreador encontró {count} fuente(s).";
+                case "client.trackerWaiting" -> "Rastreador respondió. Esperando fuentes disponibles...";
+                case "client.trackerAlternates" -> "Algunos rastreadores no están disponibles. Probando fuentes alternativas...";
+                case "client.trackerFirstUnavailable" -> "Un rastreador no está disponible. Probando otros rastreadores y descubrimiento de fuentes...";
+                case "client.peerConnected" -> "Conectado a una fuente de descarga.";
+                case "client.peersWaitingPieces" -> "Fuentes encontradas. Esperando partes disponibles...";
+                case "client.receivingBeforeProgress" -> "Recibiendo datos. El progreso avanzará tras validar las partes.";
+                case "client.diskPreparing" -> "Preparando espacio en disco para los archivos del cliente...";
+                case "client.engineState" -> "Estado de la descarga: {state}";
+                case "client.discoveryNodes" -> "Nodos de descubrimiento encontrados: {count}";
+                case "client.listeningEndpoint" -> "Esperando conexiones de fuentes en {endpoint}";
+                case "client.healthCheck" -> "Salud de la descarga: {peers} fuente(s), {nodes} nodos de descubrimiento, {speed}";
+                case "client.noPeersYet" -> "El descubrimiento de fuentes está online, pero ninguna fuente descargable se conectó todavía.";
+                case "client.trackerHealth" -> "Salud de rastreadores: {replies} respuesta(s), {sources} fuente(s) informadas, {errors} rastreador(es) no disponibles.";
+                case "client.trackersLoaded" -> "{count} rastreador(es) cargados del torrent.";
+                case "client.forceAnnounce" -> "Solicitando descubrimiento inmediato de fuentes.";
+                case "client.forcePeerDiscovery" -> "Solicitando descubrimiento inmediato por pares.";
+                case "client.forceAnnounceFailed" -> "No se pudo solicitar descubrimiento inmediato de fuentes.";
+                case "client.stateCheckingFiles" -> "verificando archivos";
+                case "client.stateDownloadingMetadata" -> "buscando metadatos";
+                case "client.stateDownloading" -> "descargando";
+                case "client.stateFinished" -> "finalizado";
+                case "client.stateSeeding" -> "completo";
+                case "client.stateCheckingResume" -> "verificando reanudación";
                 case "error.validWowFolder" -> "Selecciona una carpeta válida de World of Warcraft.";
                 case "error.wowExeMissing" -> "Wow.exe no fue encontrado en {folder}";
                 case "error.wowAlreadyRunning" -> "Wow.exe ya está abierto.";

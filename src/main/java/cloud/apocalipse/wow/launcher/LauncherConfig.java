@@ -64,6 +64,10 @@ final class LauncherConfig {
         }
     }
 
+    Path appDataDirectory() {
+        return configPath.getParent();
+    }
+
     private void load() {
         properties.setProperty(MANIFEST_URL, defaults.manifestUrl());
         if (!Files.isRegularFile(configPath)) {
