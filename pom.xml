@@ -13,14 +13,21 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.release>25</maven.compiler.release>
         <javafx.version>25.0.1</javafx.version>
+        <jlibtorrent.version>2.0.12.9</jlibtorrent.version>
         <launcher.mainClass>cloud.apocalipse.wow.launcher.LauncherMain</launcher.mainClass>
         <jpackage.appName>ApocalipseWoW</jpackage.appName>
         <jpackage.vendor>ApocalipseWoW</jpackage.vendor>
         <jpackage.description>Apocalipse WoW Launcher. The installer creates a desktop shortcut.</jpackage.description>
         <jpackage.icon>${project.basedir}/src/main/resources/Apocalipse_wow_icon.png</jpackage.icon>
-        <jpackage.debugLauncher>${project.basedir}/src/jpackage/ApocalipseWoWDebug.properties</jpackage.debugLauncher>
         <jpackage.resourceDir>${project.basedir}/src/jpackage/resources</jpackage.resourceDir>
     </properties>
+
+    <repositories>
+        <repository>
+            <id>frostwire-maven</id>
+            <url>https://dl.frostwire.com/maven</url>
+        </repository>
+    </repositories>
 
     <dependencies>
         <dependency>
@@ -32,6 +39,16 @@
             <groupId>org.openjfx</groupId>
             <artifactId>javafx-web</artifactId>
             <version>${javafx.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.frostwire</groupId>
+            <artifactId>jlibtorrent</artifactId>
+            <version>${jlibtorrent.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.frostwire</groupId>
+            <artifactId>jlibtorrent-windows</artifactId>
+            <version>${jlibtorrent.version}</version>
         </dependency>
     </dependencies>
 
@@ -130,7 +147,6 @@
                                         <argument>--resource-dir</argument><argument>${jpackage.resourceDir}</argument>
                                         <argument>--main-jar</argument><argument>${project.build.finalName}.jar</argument>
                                         <argument>--main-class</argument><argument>${launcher.mainClass}</argument>
-                                        <argument>--add-launcher</argument><argument>ApocalipseWoWDebug=${jpackage.debugLauncher}</argument>
                                         <argument>--java-options</argument><argument>-Dfile.encoding=UTF-8</argument>
                                         <argument>--verbose</argument>
                                     </arguments>
@@ -168,7 +184,6 @@
                                         <argument>--app-version</argument><argument>${project.version}</argument>
                                         <argument>--main-jar</argument><argument>${project.build.finalName}.jar</argument>
                                         <argument>--main-class</argument><argument>${launcher.mainClass}</argument>
-                                        <argument>--add-launcher</argument><argument>ApocalipseWoWDebug=${jpackage.debugLauncher}</argument>
                                         <argument>--win-menu</argument>
                                         <argument>--win-menu-group</argument><argument>Apocalipse WoW</argument>
                                         <argument>--win-shortcut</argument>
@@ -210,7 +225,6 @@
                                         <argument>--app-version</argument><argument>${project.version}</argument>
                                         <argument>--main-jar</argument><argument>${project.build.finalName}.jar</argument>
                                         <argument>--main-class</argument><argument>${launcher.mainClass}</argument>
-                                        <argument>--add-launcher</argument><argument>ApocalipseWoWDebug=${jpackage.debugLauncher}</argument>
                                         <argument>--win-menu</argument>
                                         <argument>--win-menu-group</argument><argument>Apocalipse WoW</argument>
                                         <argument>--win-shortcut</argument>

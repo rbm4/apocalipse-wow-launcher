@@ -321,6 +321,44 @@
     -fx-background-color: rgba(244, 210, 122, 0.10);
 }
 
+.cancel-button {
+    -fx-border-color: rgba(239, 68, 68, 0.48);
+    -fx-text-fill: #fecaca;
+}
+
+.cancel-button:hover {
+    -fx-background-color: rgba(127, 29, 29, 0.36);
+}
+
+.setup-panel {
+    -fx-padding: 18px;
+    -fx-background-color: rgba(16, 13, 17, 0.78);
+    -fx-border-color: rgba(244, 210, 122, 0.28);
+    -fx-border-radius: 8px;
+    -fx-background-radius: 8px;
+}
+
+.setup-title {
+    -fx-font-size: 22px;
+    -fx-font-weight: 900;
+    -fx-text-fill: #ffffff;
+}
+
+.setup-body {
+    -fx-font-size: 15px;
+    -fx-text-fill: #decfbe;
+}
+
+.setup-warning {
+    -fx-padding: 10px 12px;
+    -fx-background-color: rgba(230, 82, 31, 0.12);
+    -fx-background-radius: 6px;
+    -fx-border-color: rgba(244, 210, 122, 0.2);
+    -fx-border-radius: 6px;
+    -fx-font-size: 13px;
+    -fx-text-fill: #f4d27a;
+}
+
 .combo-box {
     -fx-background-color: linear-gradient(to right, #b45a25, #8a421d);
     -fx-border-color: rgba(255, 217, 128, 0.42);

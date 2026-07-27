@@ -50,6 +50,22 @@ function Invoke-LoggedCommand {
     }
 }
 
+function Invoke-NativeQuiet {
+    param(
+        [string]$FilePath,
+        [string[]]$Arguments
+    )
+
+    $previousErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        & $FilePath @Arguments *> $null
+        return $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+}
+
 function New-WindowsIcon {
     param(
         [string]$SourcePath,
@@ -233,8 +249,7 @@ function Publish-Release {
     }
 
     $pomChanged = $false
-    & git diff --quiet -- pom.xml
-    if ($LASTEXITCODE -ne 0) {
+    if ((Invoke-NativeQuiet "git" @("diff", "--quiet", "--", "pom.xml")) -ne 0) {
         $pomChanged = $true
     }
 
@@ -276,15 +291,14 @@ function Publish-Release {
         }
     }
 
-    if (Prompt-YesNo "Push tag $TagName?" $true) {
+    if (Prompt-YesNo "Push tag ${TagName}?" $true) {
         & git push origin $TagName
         if ($LASTEXITCODE -ne 0) {
             throw "git push origin $TagName failed."
         }
     }
 
-    & gh release view $TagName *> $null
-    if ($LASTEXITCODE -eq 0) {
+    if ((Invoke-NativeQuiet "gh" @("release", "view", $TagName)) -eq 0) {
         if (-not (Prompt-YesNo "Release $TagName already exists. Upload MSI to it with --clobber?")) {
             throw "Release upload cancelled."
         }

@@ -1,5 +1,8 @@
 package cloud.apocalipse.wow.launcher;
 
+import cloud.apocalipse.wow.launcher.client.ClientInstallManager;
+import cloud.apocalipse.wow.launcher.client.ClientInstallPaths;
+import cloud.apocalipse.wow.launcher.torrent.jlibtorrent.JlibtorrentDownloadService;
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
 import javafx.application.Application;
@@ -60,6 +63,10 @@ public final class LauncherApp extends Application {
     private final LauncherConfig config = new LauncherConfig(defaults);
     private final PatchManager patchManager = new PatchManager();
     private final GameLauncher gameLauncher = new GameLauncher(defaults.wowExecutable());
+    private final ClientInstallManager clientInstallManager = new ClientInstallManager(
+            new ClientInstallPaths(),
+            new JlibtorrentDownloadService()
+    );
     private final RealmStatusClient realmStatusClient = new RealmStatusClient();
     private final NewsClient newsClient = new NewsClient();
     private final List<NewsCardSlot> newsCards = new ArrayList<>();
@@ -89,13 +96,21 @@ public final class LauncherApp extends Application {
     private Label newsComingBodyLabel;
     private Label optionsTitleLabel;
     private Label optionsDescriptionLabel;
+    private Label setupTitleLabel;
+    private Label setupDescriptionLabel;
+    private Label setupExistingNoticeLabel;
     private Label folderLabel;
     private Label launchLabel;
     private Label languageLabel;
     private Circle realmStatusDot;
     private TextArea logArea;
     private Hyperlink detailsLink;
+    private VBox setupPanel;
     private Button updateAndPlayButton;
+    private Button installClientButton;
+    private Button cancelClientDownloadButton;
+    private Button setupDownloadButton;
+    private Button setupExistingButton;
     private MenuButton launchOptionsButton;
     private Button browseButton;
     private ComboBox<LaunchProfile> launchProfileCombo;
@@ -106,6 +121,7 @@ public final class LauncherApp extends Application {
     private Tab websiteTab;
     private WebView websiteWebView;
     private Timeline realmStatusTimeline;
+    private Task<Path> clientInstallTask;
     private AppLanguage language;
     private double dragOffsetX;
     private double dragOffsetY;
@@ -115,6 +131,9 @@ public final class LauncherApp extends Application {
     private double restoreHeight;
     private boolean patchVerified;
     private boolean launchAfterSync;
+    private boolean working;
+    private boolean gameRunning;
+    private boolean clientInstallInProgress;
     private boolean manuallyMaximized;
 
     @Override
@@ -134,6 +153,10 @@ public final class LauncherApp extends Application {
             updateAndPlayButton.setDefaultButton(true);
             updateAndPlayButton.getStyleClass().add("update-button");
             updateAndPlayButton.setOnAction(event -> synchronize(true));
+
+            installClientButton = new Button(t("button.downloadClient"));
+            installClientButton.getStyleClass().add("secondary-button");
+            installClientButton.setOnAction(event -> installClientAndPlay());
 
             launchOptionsButton = new MenuButton(t("button.launchOptions"));
             launchOptionsButton.getStyleClass().add("launch-options-button");
@@ -158,6 +181,12 @@ public final class LauncherApp extends Application {
             detailsLink = new Hyperlink(t("details.show"));
             detailsLink.setPadding(Insets.EMPTY);
             detailsLink.setOnAction(event -> toggleDetails());
+
+            cancelClientDownloadButton = new Button(t("button.cancelDownload"));
+            cancelClientDownloadButton.getStyleClass().addAll("secondary-button", "cancel-button");
+            cancelClientDownloadButton.setVisible(false);
+            cancelClientDownloadButton.setManaged(false);
+            cancelClientDownloadButton.setOnAction(event -> cancelClientDownload());
 
             launchProfileCombo = new ComboBox<>();
             launchProfileCombo.getItems().addAll(LaunchProfile.values());
@@ -215,12 +244,11 @@ public final class LauncherApp extends Application {
             if (config.wowDirectory().isEmpty()) {
                 Platform.runLater(() -> {
                     try {
-                        writeStartupLog("Prompting for WoW folder.", null);
+                        writeStartupLog("Showing client setup choices.", null);
                         tabs.getSelectionModel().select(1);
                         stage.toFront();
-                        chooseWowFolder(stage);
                     } catch (RuntimeException exc) {
-                        writeStartupLog("WoW folder prompt failed.", exc);
+                        writeStartupLog("Client setup prompt failed.", exc);
                         throw exc;
                     }
                 });
@@ -417,7 +445,7 @@ public final class LauncherApp extends Application {
     }
 
     private HBox actionRow() {
-        HBox row = new HBox(10, updateAndPlayButton, launchOptionsButton);
+        HBox row = new HBox(10, updateAndPlayButton, launchOptionsButton, installClientButton);
         row.setAlignment(Pos.CENTER_LEFT);
         return row;
     }
@@ -481,7 +509,9 @@ public final class LauncherApp extends Application {
     }
 
     private VBox progressBlock() {
-        VBox box = new VBox(8, statusLabel, progressBar, detailsLink, logArea);
+        HBox detailsRow = new HBox(12, detailsLink, cancelClientDownloadButton);
+        detailsRow.setAlignment(Pos.CENTER_LEFT);
+        VBox box = new VBox(8, statusLabel, progressBar, detailsRow, logArea);
         box.getStyleClass().add("glass-panel");
         box.setMaxWidth(Double.MAX_VALUE);
         VBox.setVgrow(progressBar, Priority.NEVER);
@@ -563,6 +593,7 @@ public final class LauncherApp extends Application {
         optionsTitleLabel.getStyleClass().add("hero-title");
         optionsDescriptionLabel = new Label(t("options.description"));
         optionsDescriptionLabel.getStyleClass().add("hero-subtitle");
+        setupPanel = setupPanel(stage);
 
         GridPane form = new GridPane();
         form.setHgap(14);
@@ -587,9 +618,37 @@ public final class LauncherApp extends Application {
         GridPane.setHgrow(launchProfileCombo, Priority.ALWAYS);
         GridPane.setHgrow(languageCombo, Priority.ALWAYS);
 
-        VBox content = new VBox(18, optionsTitleLabel, optionsDescriptionLabel, form);
+        VBox content = new VBox(18, optionsTitleLabel, optionsDescriptionLabel, setupPanel, form);
         content.setPadding(new Insets(22));
+        refreshSetupPanelVisibility();
         return content;
+    }
+
+    private VBox setupPanel(Stage stage) {
+        setupTitleLabel = new Label(t("setup.title"));
+        setupTitleLabel.getStyleClass().add("setup-title");
+        setupDescriptionLabel = new Label(t("setup.description"));
+        setupDescriptionLabel.setWrapText(true);
+        setupDescriptionLabel.getStyleClass().add("setup-body");
+
+        setupDownloadButton = new Button(t("button.downloadClient"));
+        setupDownloadButton.getStyleClass().add("update-button");
+        setupDownloadButton.setOnAction(event -> installClientAndPlay());
+
+        setupExistingButton = new Button(t("button.useExistingClient"));
+        setupExistingButton.getStyleClass().add("secondary-button");
+        setupExistingButton.setOnAction(event -> chooseWowFolder(stage));
+
+        setupExistingNoticeLabel = new Label(t("setup.existingNotice"));
+        setupExistingNoticeLabel.setWrapText(true);
+        setupExistingNoticeLabel.getStyleClass().add("setup-warning");
+
+        HBox actions = new HBox(12, setupDownloadButton, setupExistingButton);
+        actions.setAlignment(Pos.CENTER_LEFT);
+        VBox panel = new VBox(12, setupTitleLabel, setupDescriptionLabel, actions, setupExistingNoticeLabel);
+        panel.getStyleClass().add("setup-panel");
+        panel.setMaxWidth(Double.MAX_VALUE);
+        return panel;
     }
 
     private void configureLaunchOptionsMenu() {
@@ -630,6 +689,7 @@ public final class LauncherApp extends Application {
         Path wowDirectory = selected.toPath().toAbsolutePath().normalize();
         config.setWowDirectory(wowDirectory);
         refreshWowPathLabel();
+        refreshSetupPanelVisibility();
         patchVerified = false;
         updateAndPlayButton.setText(t("button.updatePlay"));
         saveConfig();
@@ -637,6 +697,11 @@ public final class LauncherApp extends Application {
     }
 
     private void synchronize(boolean launchWhenDone) {
+        if (launchWhenDone && gameLauncher.isRunning()) {
+            setGameRunning(true);
+            log(t("log.gameAlreadyRunning"));
+            return;
+        }
         Path wowDirectory = selectedWowDirectory();
         if (wowDirectory == null) {
             tabs.getSelectionModel().select(1);
@@ -693,7 +758,86 @@ public final class LauncherApp extends Application {
         thread.start();
     }
 
+    private void installClientAndPlay() {
+        if (gameLauncher.isRunning()) {
+            setGameRunning(true);
+            log(t("log.gameAlreadyRunning"));
+            return;
+        }
+
+        patchVerified = false;
+        setClientInstallInProgress(true);
+        setWorking(true);
+        Task<Path> task = new Task<>() {
+            @Override
+            protected Path call() throws Exception {
+                return clientInstallManager.installFromBundledTorrent(new PatchProgress() {
+                    @Override
+                    public void message(String message) {
+                        String translatedMessage = translateClientInstallMessage(message);
+                        updateMessage(translatedMessage);
+                        Platform.runLater(() -> log(translatedMessage));
+                    }
+
+                    @Override
+                    public void progress(double value) {
+                        updateProgress(value, 1);
+                    }
+                });
+            }
+        };
+        clientInstallTask = task;
+        statusLabel.textProperty().bind(task.messageProperty());
+        progressBar.progressProperty().bind(task.progressProperty());
+        task.setOnSucceeded(event -> {
+            statusLabel.textProperty().unbind();
+            progressBar.progressProperty().unbind();
+            Path wowDirectory = task.getValue();
+            config.setWowDirectory(wowDirectory);
+            refreshWowPathLabel();
+            refreshSetupPanelVisibility();
+            saveConfig();
+            clientInstallTask = null;
+            setClientInstallInProgress(false);
+            setWorking(false);
+            log(t("log.clientInstalled") + ": " + wowDirectory);
+            synchronize(true);
+        });
+        task.setOnFailed(event -> {
+            statusLabel.textProperty().unbind();
+            progressBar.progressProperty().unbind();
+            progressBar.setProgress(0);
+            boolean cancelled = isClientDownloadCancelled(task.getException());
+            statusLabel.setText(cancelled ? t("status.clientDownloadCancelled") : t("status.clientInstallFailed"));
+            clientInstallTask = null;
+            setClientInstallInProgress(false);
+            setWorking(false);
+            Throwable error = task.getException();
+            log(cancelled
+                    ? t("log.clientDownloadCancelled")
+                    : t("log.clientInstallFailed") + ": " + (error == null ? t("error.unknown") : error.getMessage()));
+        });
+
+        Thread thread = new Thread(task, "client-install");
+        thread.setDaemon(true);
+        thread.start();
+    }
+
+    private void cancelClientDownload() {
+        if (!clientInstallInProgress) {
+            return;
+        }
+        cancelClientDownloadButton.setDisable(true);
+        clientInstallManager.cancelInstall();
+        log(t("log.clientDownloadCancelRequested"));
+    }
+
     private void launchGame() {
+        if (gameLauncher.isRunning()) {
+            setGameRunning(true);
+            log(t("log.gameAlreadyRunning"));
+            return;
+        }
         Path wowDirectory = selectedWowDirectory();
         if (wowDirectory == null) {
             tabs.getSelectionModel().select(1);
@@ -702,11 +846,18 @@ public final class LauncherApp extends Application {
         }
         try {
             LaunchProfile profile = LaunchProfile.fromId(config.launchProfile());
-            gameLauncher.launch(wowDirectory, profile.arguments());
+            gameLauncher.launch(wowDirectory, profile.arguments(), () -> Platform.runLater(this::handleGameExited));
+            setGameRunning(true);
             log(t("log.launchingProfile") + ": " + profile.label(language));
         } catch (Exception exc) {
             log(t("log.launchFailed") + ": " + translateErrorMessage(exc.getMessage()));
         }
+    }
+
+    private void handleGameExited() {
+        setGameRunning(false);
+        statusLabel.setText(patchVerified ? t("status.readyToPlay") : t("status.ready"));
+        log(t("log.gameClosed"));
     }
 
     private Path selectedWowDirectory() {
@@ -884,8 +1035,44 @@ public final class LauncherApp extends Application {
     }
 
     private void setWorking(boolean working) {
-        updateAndPlayButton.setDisable(working);
-        updateAndPlayButton.setText(working ? t("button.updating") : t("button.updatePlay"));
+        this.working = working;
+        updateActionControls();
+    }
+
+    private void setClientInstallInProgress(boolean inProgress) {
+        clientInstallInProgress = inProgress;
+        if (cancelClientDownloadButton != null) {
+            cancelClientDownloadButton.setVisible(inProgress);
+            cancelClientDownloadButton.setManaged(inProgress);
+            cancelClientDownloadButton.setDisable(!inProgress);
+        }
+        updateActionControls();
+    }
+
+    private void setGameRunning(boolean running) {
+        gameRunning = running && gameLauncher.isRunning();
+        updateActionControls();
+        if (gameRunning) {
+            statusLabel.setText(t("status.gameRunning"));
+        }
+    }
+
+    private void updateActionControls() {
+        boolean clientRunning = gameRunning || gameLauncher.isRunning();
+        updateAndPlayButton.setDisable(working || clientRunning);
+        updateAndPlayButton.setText(working
+                ? t("button.updating")
+                : clientRunning ? t("button.playing") : t("button.updatePlay"));
+        installClientButton.setDisable(working || clientRunning);
+        if (setupDownloadButton != null) {
+            setupDownloadButton.setDisable(working || clientRunning);
+        }
+        if (setupExistingButton != null) {
+            setupExistingButton.setDisable(working || clientRunning);
+        }
+        if (cancelClientDownloadButton != null) {
+            cancelClientDownloadButton.setDisable(!clientInstallInProgress);
+        }
         launchOptionsButton.setDisable(working);
         browseButton.setDisable(working);
         if (launchProfileCombo != null) {
@@ -925,8 +1112,27 @@ public final class LauncherApp extends Application {
             windowTitleLabel.setText(t("window.title"));
         }
         browseButton.setText(t("button.chooseFolder"));
-        if (!updateAndPlayButton.isDisabled()) {
-            updateAndPlayButton.setText(t("button.updatePlay"));
+        installClientButton.setText(t("button.downloadClient"));
+        cancelClientDownloadButton.setText(t("button.cancelDownload"));
+        if (setupDownloadButton != null) {
+            setupDownloadButton.setText(t("button.downloadClient"));
+        }
+        if (setupExistingButton != null) {
+            setupExistingButton.setText(t("button.useExistingClient"));
+        }
+        if (setupTitleLabel != null) {
+            setupTitleLabel.setText(t("setup.title"));
+        }
+        if (setupDescriptionLabel != null) {
+            setupDescriptionLabel.setText(t("setup.description"));
+        }
+        if (setupExistingNoticeLabel != null) {
+            setupExistingNoticeLabel.setText(t("setup.existingNotice"));
+        }
+        updateActionControls();
+        if (gameRunning) {
+            statusLabel.setText(t("status.gameRunning"));
+        } else if (!working) {
             statusLabel.setText(patchVerified ? t("status.readyToPlay") : t("status.ready"));
         }
         configureLaunchOptionsMenu();
@@ -948,8 +1154,28 @@ public final class LauncherApp extends Application {
         languageLabel.setText(t("options.language"));
         detailsLink.setText(logArea.isVisible() ? t("details.hide") : t("details.show"));
         refreshWowPathLabel();
+        refreshSetupPanelVisibility();
         refreshRealmStatus();
         refreshNews();
+    }
+
+    private boolean isClientDownloadCancelled(Throwable error) {
+        while (error != null) {
+            if ("Client download cancelled.".equals(error.getMessage())) {
+                return true;
+            }
+            error = error.getCause();
+        }
+        return false;
+    }
+
+    private void refreshSetupPanelVisibility() {
+        if (setupPanel == null) {
+            return;
+        }
+        boolean visible = config.wowDirectory().isEmpty();
+        setupPanel.setVisible(visible);
+        setupPanel.setManaged(visible);
     }
 
     private void configureLaunchProfileComboDisplay() {
@@ -999,6 +1225,46 @@ public final class LauncherApp extends Application {
         return message;
     }
 
+    private String translateClientInstallMessage(String message) {
+        if (message == null || message.isBlank()) {
+            return "";
+        }
+        if (message.startsWith("Client already installed: ")) {
+            return t("client.alreadyInstalled").replace("{folder}", message.substring("Client already installed: ".length()));
+        }
+        if (message.equals("Preparing client download...")) {
+            return t("client.preparingDownload");
+        }
+        if (message.equals("Starting client download...")) {
+            return t("client.startingDownload");
+        }
+        if (message.equals("Download initializing...")) {
+            return t("client.downloadInitializing");
+        }
+        if (message.startsWith("Downloading client... ") && message.contains(" at ")) {
+            String details = message.substring("Downloading client... ".length());
+            int separator = details.lastIndexOf(" at ");
+            if (separator > 0) {
+                return t("client.downloading")
+                        .replace("{percent}", details.substring(0, separator))
+                        .replace("{speed}", details.substring(separator + " at ".length()));
+            }
+        }
+        if (message.equals("Verifying client download...") || message.equals("Verifying client files...")) {
+            return t("client.verifying");
+        }
+        if (message.equals("Cleaning cancelled client download...")) {
+            return t("client.cleaningCancelled");
+        }
+        if (message.equals("Client torrent download complete.")) {
+            return t("client.downloadComplete");
+        }
+        if (message.startsWith("Client download complete: ")) {
+            return t("client.complete").replace("{folder}", message.substring("Client download complete: ".length()));
+        }
+        return message;
+    }
+
     private String translateErrorMessage(String message) {
         if (message == null || message.isBlank()) {
             return t("error.unknown");
@@ -1008,6 +1274,9 @@ public final class LauncherApp extends Application {
         }
         if (message.startsWith("Wow.exe was not found in ")) {
             return t("error.wowExeMissing").replace("{folder}", message.substring("Wow.exe was not found in ".length()));
+        }
+        if (message.equals("Wow.exe is already running.")) {
+            return t("error.wowAlreadyRunning");
         }
         if (message.startsWith("Data folder was not found in ")) {
             return t("error.dataFolderMissing").replace("{folder}", message.substring("Data folder was not found in ".length()));
@@ -1092,13 +1361,23 @@ public final class LauncherApp extends Application {
                 case "tab.website" -> "Site";
                 case "button.chooseFolder" -> "Escolher pasta";
                 case "button.updatePlay" -> "Atualizar e Jogar";
+                case "button.downloadClient" -> "Baixar cliente";
+                case "button.cancelDownload" -> "Cancelar download";
+                case "button.useExistingClient" -> "Usar instalação existente";
                 case "button.launchOptions" -> "Opções de execução";
                 case "button.updating" -> "Atualizando...";
+                case "button.playing" -> "Em jogo";
                 case "status.ready" -> "Pronto";
                 case "status.readyToPlay" -> "Pronto para jogar";
+                case "status.gameRunning" -> "WoW está aberto";
+                case "status.clientInstallFailed" -> "Falha ao baixar cliente";
+                case "status.clientDownloadCancelled" -> "Download cancelado";
                 case "status.patchFailed" -> "Falha na atualização";
                 case "details.show" -> "Ver detalhes";
                 case "details.hide" -> "Ocultar detalhes";
+                case "setup.title" -> "Preparar cliente";
+                case "setup.description" -> "Baixe um cliente pronto para o Apocalipse ou selecione uma instalação existente do WoW 3.3.5a.";
+                case "setup.existingNotice" -> "Ao usar uma instalação existente, o launcher irá ajustar o realmlist e gerenciar arquivos de patch dentro dessa pasta.";
                 case "home.subtitle" -> "Atualize, verifique e entre em Azeroth pelo reino Apocalipse.";
                 case "home.badge" -> "Patch de temporada gerenciado pelo launcher";
                 case "realm.title" -> "Status do Reino";
@@ -1141,6 +1420,12 @@ public final class LauncherApp extends Application {
                 case "log.patchFailed" -> "Falha na atualização";
                 case "log.launchingProfile" -> "Iniciando Wow.exe com perfil";
                 case "log.launchFailed" -> "Falha ao iniciar";
+                case "log.gameAlreadyRunning" -> "Wow.exe já está aberto.";
+                case "log.gameClosed" -> "Wow.exe foi fechado.";
+                case "log.clientInstalled" -> "Cliente instalado";
+                case "log.clientInstallFailed" -> "Falha ao baixar cliente";
+                case "log.clientDownloadCancelRequested" -> "Cancelando download do cliente...";
+                case "log.clientDownloadCancelled" -> "Download do cliente cancelado. Arquivos parciais removidos.";
                 case "log.realmUnavailable" -> "Status do reino indisponível";
                 case "log.newsUnavailable" -> "Noticias indisponiveis";
                 case "log.saveFailed" -> "Não foi possível salvar as configurações";
@@ -1151,8 +1436,18 @@ public final class LauncherApp extends Application {
                 case "patch.current" -> "Já atualizado: {file}";
                 case "patch.downloading" -> "Baixando patch...";
                 case "patch.installed" -> "Instalado {file}";
+                case "client.alreadyInstalled" -> "Cliente já instalado: {folder}";
+                case "client.preparingDownload" -> "Preparando download do cliente...";
+                case "client.startingDownload" -> "Iniciando download do cliente...";
+                case "client.downloadInitializing" -> "Inicializando download...";
+                case "client.downloading" -> "Baixando cliente... {percent} a {speed}";
+                case "client.verifying" -> "Verificando arquivos do cliente...";
+                case "client.cleaningCancelled" -> "Removendo arquivos parciais...";
+                case "client.downloadComplete" -> "Download do cliente concluído.";
+                case "client.complete" -> "Cliente pronto: {folder}";
                 case "error.validWowFolder" -> "Selecione uma pasta válida do World of Warcraft.";
                 case "error.wowExeMissing" -> "Wow.exe não foi encontrado em {folder}";
+                case "error.wowAlreadyRunning" -> "Wow.exe já está aberto.";
                 case "error.dataFolderMissing" -> "A pasta Data não foi encontrada em {folder}";
                 case "error.unknown" -> "erro desconhecido";
                 default -> key;
@@ -1167,13 +1462,23 @@ public final class LauncherApp extends Application {
                 case "tab.website" -> "Website";
                 case "button.chooseFolder" -> "Choose folder";
                 case "button.updatePlay" -> "Update & Play";
+                case "button.downloadClient" -> "Download Client";
+                case "button.cancelDownload" -> "Cancel Download";
+                case "button.useExistingClient" -> "Use Existing Install";
                 case "button.launchOptions" -> "Launch options";
                 case "button.updating" -> "Updating...";
+                case "button.playing" -> "Playing";
                 case "status.ready" -> "Ready";
                 case "status.readyToPlay" -> "Ready to play";
+                case "status.gameRunning" -> "WoW is running";
+                case "status.clientInstallFailed" -> "Client download failed";
+                case "status.clientDownloadCancelled" -> "Download cancelled";
                 case "status.patchFailed" -> "Patch failed";
                 case "details.show" -> "See details";
                 case "details.hide" -> "Hide details";
+                case "setup.title" -> "Prepare your client";
+                case "setup.description" -> "Download a client ready for Apocalipse or select an existing WoW 3.3.5a installation.";
+                case "setup.existingNotice" -> "When using an existing installation, the launcher will update the realmlist and manage patch files inside that folder.";
                 case "home.subtitle" -> "Patch, verify, and enter Azeroth through the Apocalipse realm.";
                 case "home.badge" -> "Season client patch managed by launcher";
                 case "realm.title" -> "Realm Status";
@@ -1216,6 +1521,12 @@ public final class LauncherApp extends Application {
                 case "log.patchFailed" -> "Patch failed";
                 case "log.launchingProfile" -> "Launching Wow.exe with profile";
                 case "log.launchFailed" -> "Launch failed";
+                case "log.gameAlreadyRunning" -> "Wow.exe is already running.";
+                case "log.gameClosed" -> "Wow.exe closed.";
+                case "log.clientInstalled" -> "Client installed";
+                case "log.clientInstallFailed" -> "Client download failed";
+                case "log.clientDownloadCancelRequested" -> "Cancelling client download...";
+                case "log.clientDownloadCancelled" -> "Client download cancelled. Partial files removed.";
                 case "log.realmUnavailable" -> "Realm status unavailable";
                 case "log.newsUnavailable" -> "News unavailable";
                 case "log.saveFailed" -> "Could not save launcher settings";
@@ -1226,8 +1537,18 @@ public final class LauncherApp extends Application {
                 case "patch.current" -> "Already current: {file}";
                 case "patch.downloading" -> "Downloading patch...";
                 case "patch.installed" -> "Installed {file}";
+                case "client.alreadyInstalled" -> "Client already installed: {folder}";
+                case "client.preparingDownload" -> "Preparing client download...";
+                case "client.startingDownload" -> "Starting client download...";
+                case "client.downloadInitializing" -> "Download initializing...";
+                case "client.downloading" -> "Downloading client... {percent} at {speed}";
+                case "client.verifying" -> "Verifying client files...";
+                case "client.cleaningCancelled" -> "Removing partial files...";
+                case "client.downloadComplete" -> "Client download complete.";
+                case "client.complete" -> "Client ready: {folder}";
                 case "error.validWowFolder" -> "Select a valid World of Warcraft folder.";
                 case "error.wowExeMissing" -> "Wow.exe was not found in {folder}";
+                case "error.wowAlreadyRunning" -> "Wow.exe is already running.";
                 case "error.dataFolderMissing" -> "Data folder was not found in {folder}";
                 case "error.unknown" -> "unknown error";
                 default -> key;
@@ -1242,13 +1563,23 @@ public final class LauncherApp extends Application {
                 case "tab.website" -> "Sitio";
                 case "button.chooseFolder" -> "Elegir carpeta";
                 case "button.updatePlay" -> "Actualizar y Jugar";
+                case "button.downloadClient" -> "Descargar cliente";
+                case "button.cancelDownload" -> "Cancelar descarga";
+                case "button.useExistingClient" -> "Usar instalación existente";
                 case "button.launchOptions" -> "Opciones de inicio";
                 case "button.updating" -> "Actualizando...";
+                case "button.playing" -> "En juego";
                 case "status.ready" -> "Listo";
                 case "status.readyToPlay" -> "Listo para jugar";
+                case "status.gameRunning" -> "WoW está abierto";
+                case "status.clientInstallFailed" -> "Error al descargar cliente";
+                case "status.clientDownloadCancelled" -> "Descarga cancelada";
                 case "status.patchFailed" -> "Error de actualización";
                 case "details.show" -> "Ver detalles";
                 case "details.hide" -> "Ocultar detalles";
+                case "setup.title" -> "Preparar cliente";
+                case "setup.description" -> "Descarga un cliente listo para Apocalipse o selecciona una instalación existente de WoW 3.3.5a.";
+                case "setup.existingNotice" -> "Al usar una instalación existente, el launcher ajustará el realmlist y gestionará archivos de parche dentro de esa carpeta.";
                 case "home.subtitle" -> "Actualiza, verifica y entra en Azeroth por el reino Apocalipse.";
                 case "home.badge" -> "Parche de temporada gestionado por el launcher";
                 case "realm.title" -> "Estado del Reino";
@@ -1291,6 +1622,12 @@ public final class LauncherApp extends Application {
                 case "log.patchFailed" -> "Error de actualización";
                 case "log.launchingProfile" -> "Iniciando Wow.exe con perfil";
                 case "log.launchFailed" -> "Error al iniciar";
+                case "log.gameAlreadyRunning" -> "Wow.exe ya está abierto.";
+                case "log.gameClosed" -> "Wow.exe fue cerrado.";
+                case "log.clientInstalled" -> "Cliente instalado";
+                case "log.clientInstallFailed" -> "Error al descargar cliente";
+                case "log.clientDownloadCancelRequested" -> "Cancelando descarga del cliente...";
+                case "log.clientDownloadCancelled" -> "Descarga del cliente cancelada. Archivos parciales eliminados.";
                 case "log.realmUnavailable" -> "Estado del reino no disponible";
                 case "log.newsUnavailable" -> "Noticias no disponibles";
                 case "log.saveFailed" -> "No se pudieron guardar las configuraciones";
@@ -1301,8 +1638,18 @@ public final class LauncherApp extends Application {
                 case "patch.current" -> "Ya actualizado: {file}";
                 case "patch.downloading" -> "Descargando parche...";
                 case "patch.installed" -> "Instalado {file}";
+                case "client.alreadyInstalled" -> "Cliente ya instalado: {folder}";
+                case "client.preparingDownload" -> "Preparando descarga del cliente...";
+                case "client.startingDownload" -> "Iniciando descarga del cliente...";
+                case "client.downloadInitializing" -> "Inicializando descarga...";
+                case "client.downloading" -> "Descargando cliente... {percent} a {speed}";
+                case "client.verifying" -> "Verificando archivos del cliente...";
+                case "client.cleaningCancelled" -> "Eliminando archivos parciales...";
+                case "client.downloadComplete" -> "Descarga del cliente completada.";
+                case "client.complete" -> "Cliente listo: {folder}";
                 case "error.validWowFolder" -> "Selecciona una carpeta válida de World of Warcraft.";
                 case "error.wowExeMissing" -> "Wow.exe no fue encontrado en {folder}";
+                case "error.wowAlreadyRunning" -> "Wow.exe ya está abierto.";
                 case "error.dataFolderMissing" -> "La carpeta Data no fue encontrada en {folder}";
                 case "error.unknown" -> "error desconocido";
                 default -> key;

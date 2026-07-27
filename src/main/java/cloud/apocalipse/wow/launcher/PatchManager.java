@@ -6,6 +6,8 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.FileSystemException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -95,12 +97,41 @@ final class PatchManager {
             if (!actualHash.equalsIgnoreCase(file.sha256())) {
                 throw new IOException("SHA-256 mismatch for " + file.name() + ": expected " + file.sha256() + ", got " + actualHash);
             }
-            Files.move(tempFile, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            installDownloadedPatch(tempFile, target);
             progress.progress(baseProgress + fileWeight);
             progress.message("Installed " + MANAGED_PATCH_NAME);
         } finally {
             Files.deleteIfExists(tempFile);
         }
+    }
+
+    private void installDownloadedPatch(Path tempFile, Path target) throws IOException {
+        try {
+            Files.move(tempFile, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            return;
+        } catch (AtomicMoveNotSupportedException ignored) {
+            // Some client folders are on filesystems where Java cannot do an atomic replace.
+        } catch (FileSystemException ex) {
+            throw patchInstallException(tempFile, target, ex);
+        }
+
+        try {
+            Files.move(tempFile, target, StandardCopyOption.REPLACE_EXISTING);
+        } catch (FileSystemException ex) {
+            throw patchInstallException(tempFile, target, ex);
+        }
+    }
+
+    private IOException patchInstallException(Path tempFile, Path target, FileSystemException cause) {
+        String reason = cause.getReason();
+        String message = "Could not replace " + target
+                + ". Close World of Warcraft, torrent clients, sync tools, or antivirus scans that may be using "
+                + MANAGED_PATCH_NAME
+                + ", then try again. Temporary download: " + tempFile;
+        if (reason != null && !reason.isBlank()) {
+            message += ". Windows reported: " + reason;
+        }
+        return new IOException(message, cause);
     }
 
     private boolean isCurrent(Path target, String expectedHash) throws IOException {
