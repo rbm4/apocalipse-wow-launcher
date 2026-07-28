@@ -9,15 +9,5 @@ public interface TorrentDownloadService {
         download(torrentFile, destination, listener);
     }
 
-    default void startWarmup(Path torrentFile, Path stateDirectory, TorrentProgressListener listener) throws Exception {
-    }
-
-    default void stopWarmup() {
-    }
-
-    default void stopWarmup(boolean announceStop) {
-        stopWarmup();
-    }
-
     void stop();
 }

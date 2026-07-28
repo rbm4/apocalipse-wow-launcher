@@ -1,3 +1,4 @@
+[CmdletBinding(PositionalBinding = $false)]
 param(
     [switch]$Release,
     [string]$Version,
@@ -26,6 +27,23 @@ function Get-ProjectVersion {
     $ns = New-Object System.Xml.XmlNamespaceManager($pom.NameTable)
     $ns.AddNamespace("m", "http://maven.apache.org/POM/4.0.0")
     return $pom.SelectSingleNode("/m:project/m:version", $ns).InnerText
+}
+
+function Assert-ProjectVersion {
+    param(
+        [string]$Value,
+        [string]$Source
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        throw "$Source cannot be empty."
+    }
+    if ($Value.Trim().StartsWith("-")) {
+        throw "$Source '$Value' looks like a command-line option. Use -Version 1.2.3 for a release version."
+    }
+    if ($Value.Trim() -notmatch '^[0-9]+(\.[0-9]+){1,3}([-.][A-Za-z0-9][A-Za-z0-9.-]*)?$') {
+        throw "$Source '$Value' is not a valid jpackage/Maven release version. Use values like 0.1.6 or 1.0.0."
+    }
 }
 
 function Invoke-LoggedCommand {
@@ -227,6 +245,8 @@ function Ensure-Wix {
 function Set-ProjectVersion {
     param([string]$NewVersion)
 
+    Assert-ProjectVersion -Value $NewVersion -Source "Version"
+
     Invoke-LoggedCommand `
         -LogPath (Join-Path ".local-release\logs" "version-set.log") `
         -FilePath "mvn" `
@@ -333,25 +353,28 @@ Set-Location $scriptRoot
 
 New-Item -ItemType Directory -Force -Path ".local-release\logs", ".local-release\msi", ".local-release\resources" | Out-Null
 
+if ($PSBoundParameters.ContainsKey("Version")) {
+    Assert-ProjectVersion -Value $Version -Source "Version"
+}
+
 Ensure-Command "java" "Install JDK 25 and make sure java.exe is on PATH." "temurin25" "EclipseAdoptium.Temurin.25.JDK" $SkipDependencyInstall
 Ensure-Command "jpackage" "Install JDK 25 and make sure jpackage.exe is on PATH." "temurin25" "EclipseAdoptium.Temurin.25.JDK" $SkipDependencyInstall
 Ensure-Command "mvn" "Install Maven and make sure mvn.exe is on PATH." "maven" "Apache.Maven" $SkipDependencyInstall
 Ensure-Wix -SkipInstall:$SkipDependencyInstall
 
 $currentVersion = Get-ProjectVersion
+Assert-ProjectVersion -Value $currentVersion -Source "Current pom.xml version"
 Write-Host "Current project version: $currentVersion"
 
 if ($Version) {
-    Set-ProjectVersion -NewVersion $Version
+    Set-ProjectVersion -NewVersion $Version.Trim()
 } elseif ($Release -and (Prompt-YesNo "Bump pom.xml version before building?")) {
     $Version = Read-Host "New version"
-    if ([string]::IsNullOrWhiteSpace($Version)) {
-        throw "Version cannot be empty."
-    }
     Set-ProjectVersion -NewVersion $Version.Trim()
 }
 
 $projectVersion = Get-ProjectVersion
+Assert-ProjectVersion -Value $projectVersion -Source "Project version"
 $buildLog = Join-Path ".local-release\logs" "msi-build-$projectVersion.log"
 $iconPath = Join-Path ".local-release\resources" "ApocalipseWoW.ico"
 New-WindowsIcon `
@@ -360,6 +383,7 @@ New-WindowsIcon `
 $resolvedIconPath = (Resolve-Path -LiteralPath $iconPath).Path
 
 try {
+    $buildStartedAt = Get-Date
     Invoke-LoggedCommand `
         -LogPath $buildLog `
         -FilePath "mvn" `
@@ -371,6 +395,7 @@ try {
     }
 
     Write-Host "jpackage did not see the copied main jar immediately after clean. Retrying without clean..."
+    $buildStartedAt = Get-Date
     Invoke-LoggedCommand `
         -LogPath $buildLog `
         -FilePath "mvn" `
@@ -378,6 +403,7 @@ try {
 }
 
 $msi = Get-ChildItem -Path "target\jpackage" -Filter "*.msi" -File -Recurse -ErrorAction SilentlyContinue |
+    Where-Object { $_.LastWriteTime -ge $buildStartedAt } |
     Sort-Object -Property LastWriteTime -Descending |
     Select-Object -First 1
 

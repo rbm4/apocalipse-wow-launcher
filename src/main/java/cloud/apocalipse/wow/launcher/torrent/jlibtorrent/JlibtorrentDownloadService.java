@@ -7,12 +7,10 @@ import cloud.apocalipse.wow.launcher.torrent.TorrentProgressListener;
 import cloud.apocalipse.wow.launcher.torrent.TorrentState;
 import com.frostwire.jlibtorrent.AddTorrentParams;
 import com.frostwire.jlibtorrent.AlertListener;
-import com.frostwire.jlibtorrent.Priority;
 import com.frostwire.jlibtorrent.SessionParams;
 import com.frostwire.jlibtorrent.SessionManager;
 import com.frostwire.jlibtorrent.SettingsPack;
 import com.frostwire.jlibtorrent.StorageMode;
-import com.frostwire.jlibtorrent.TorrentFlags;
 import com.frostwire.jlibtorrent.TorrentHandle;
 import com.frostwire.jlibtorrent.TorrentInfo;
 import com.frostwire.jlibtorrent.TorrentStatus;
@@ -26,7 +24,6 @@ import com.frostwire.jlibtorrent.alerts.TrackerErrorAlert;
 import com.frostwire.jlibtorrent.alerts.TrackerReplyAlert;
 
 import java.io.File;
-import java.io.IOException;
 import java.net.InetAddress;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -38,21 +35,13 @@ import java.util.concurrent.atomic.AtomicReference;
 
 public final class JlibtorrentDownloadService implements TorrentDownloadService {
     private static final String SESSION_STATE_FILE = "libtorrent-session.state";
-    private static final String WARMUP_CACHE_DIRECTORY = "warmup-cache";
-    private static final long WARMUP_POLL_INTERVAL_MILLIS = 5_000L;
-    private static final long WARMUP_SAVE_INTERVAL_NANOS = 60_000_000_000L;
     private static final long BLOCK_PROGRESS_EMIT_INTERVAL_NANOS = 500_000_000L;
     private static final long ESTIMATED_BLOCK_BYTES = 16L * 1024L;
 
     private final Object lock = new Object();
-    private final Object warmupLock = new Object();
     private SessionManager session;
     private CountDownLatch activeFinished;
     private AtomicReference<Throwable> activeFailure;
-    private SessionManager warmupSession;
-    private Thread warmupThread;
-    private volatile boolean warmupStopRequested;
-    private volatile boolean warmupAnnounceStop;
     private final List<String> fixedPeerSpecs;
 
     public JlibtorrentDownloadService() {
@@ -88,7 +77,7 @@ public final class JlibtorrentDownloadService implements TorrentDownloadService 
 
         TorrentInfo torrentInfo = new TorrentInfo(torrentFile.toFile());
         long totalSize = Math.max(0, torrentInfo.totalSize());
-        WarmupDiagnostics diagnostics = new WarmupDiagnostics(listener);
+        TorrentDiagnostics diagnostics = new TorrentDiagnostics(listener);
         activeSession.addListener(new AlertListener() {
             @Override
             public int[] types() {
@@ -103,7 +92,7 @@ public final class JlibtorrentDownloadService implements TorrentDownloadService 
                     handle.set(torrentHandle);
                     torrentHandle.resume();
                     diagnostics.reportTorrentAdded(torrentHandle);
-                    diagnostics.emitOnce("added", "Client download registered. Warming up network...");
+                    diagnostics.emitOnce("added", "Client download registered.");
                     listener.onProgress(new TorrentProgress(TorrentState.DOWNLOADING, 0, 0, totalSize, 0, 0, 0, 0, 0, 0, 0, 0, 0));
                     return;
                 }
@@ -176,7 +165,6 @@ public final class JlibtorrentDownloadService implements TorrentDownloadService 
                     activeSession,
                     torrentInfo,
                     destination.toFile(),
-                    null,
                     fixedPeers,
                     new com.frostwire.jlibtorrent.swig.torrent_flags_t()
             );
@@ -207,118 +195,6 @@ public final class JlibtorrentDownloadService implements TorrentDownloadService 
     }
 
     @Override
-    public void startWarmup(Path torrentFile, Path stateDirectory, TorrentProgressListener listener) throws Exception {
-        if (!Files.isRegularFile(torrentFile)) {
-            throw new TorrentException("Torrent file was not found: " + torrentFile);
-        }
-        Files.createDirectories(stateDirectory);
-
-        synchronized (warmupLock) {
-            if (warmupSession != null && warmupSession.isRunning()) {
-                return;
-            }
-            warmupStopRequested = false;
-            warmupAnnounceStop = true;
-            SessionManager activeWarmupSession = new SessionManager();
-            warmupSession = activeWarmupSession;
-            WarmupDiagnostics diagnostics = new WarmupDiagnostics(listener);
-            activeWarmupSession.addListener(new AlertListener() {
-                @Override
-                public int[] types() {
-                    return null;
-                }
-
-                @Override
-                public void alert(Alert<?> alert) {
-                    AlertType type = alert.type();
-                    if (type == AlertType.ADD_TORRENT) {
-                        TorrentHandle torrentHandle = ((AddTorrentAlert) alert).handle();
-                        torrentHandle.resume();
-                        diagnostics.emitOnce("warmupTorrentAdded", "Client torrent registered for source discovery.");
-                        return;
-                    }
-                    if (type == AlertType.STATE_UPDATE) {
-                        StateUpdateAlert stateUpdate = (StateUpdateAlert) alert;
-                        if (!stateUpdate.status().isEmpty()) {
-                            diagnostics.reportStatus(stateUpdate.status().getFirst());
-                        }
-                        return;
-                    }
-                    if (type == AlertType.LISTEN_SUCCEEDED) {
-                        diagnostics.emitOnce("listening", "Network listener ready.");
-                        return;
-                    }
-                    if (type == AlertType.DHT_BOOTSTRAP) {
-                        diagnostics.emitOnce("dht", "Peer discovery network ready.");
-                        return;
-                    }
-                    if (type == AlertType.DHT_GET_PEERS) {
-                        diagnostics.emitOnce("dhtLookup", "Peer discovery lookup is active for the client download.");
-                        return;
-                    }
-                    if (type == AlertType.TRACKER_REPLY) {
-                        TrackerReplyAlert trackerReply = (TrackerReplyAlert) alert;
-                        diagnostics.reportTrackerReply(trackerReply.numPeers());
-                        return;
-                    }
-                    if (type == AlertType.TRACKER_ERROR) {
-                        diagnostics.reportTrackerError((TrackerErrorAlert) alert);
-                        return;
-                    }
-                    if (type == AlertType.PEER_CONNECT) {
-                        diagnostics.emitOnce("peerConnect", "Connected to a download peer.");
-                        return;
-                    }
-                    if (type == AlertType.SESSION_ERROR) {
-                        diagnostics.emitOnce("warmupError", "Peer discovery warm-up reported a network error.");
-                    }
-                }
-            });
-
-            warmupThread = new Thread(
-                    () -> runWarmup(activeWarmupSession, torrentFile, stateDirectory, diagnostics, listener),
-                    "apocalipse-wow-torrent-warmup"
-            );
-            warmupThread.setDaemon(true);
-            warmupThread.start();
-        }
-    }
-
-    @Override
-    public void stopWarmup() {
-        stopWarmup(true);
-    }
-
-    @Override
-    public void stopWarmup(boolean announceStop) {
-        SessionManager activeWarmupSession;
-        Thread activeWarmupThread;
-        synchronized (warmupLock) {
-            warmupStopRequested = true;
-            warmupAnnounceStop = announceStop;
-            activeWarmupSession = warmupSession;
-            activeWarmupThread = warmupThread;
-        }
-        if (activeWarmupThread != null && activeWarmupThread != Thread.currentThread()) {
-            activeWarmupThread.interrupt();
-            try {
-                activeWarmupThread.join(2_000);
-            } catch (InterruptedException exc) {
-                Thread.currentThread().interrupt();
-            }
-        }
-        if (activeWarmupThread != null && activeWarmupThread.isAlive() && activeWarmupSession != null) {
-            stopSession(activeWarmupSession, true);
-        }
-        synchronized (warmupLock) {
-            if (warmupSession == activeWarmupSession) {
-                warmupSession = null;
-                warmupThread = null;
-            }
-        }
-    }
-
-    @Override
     public void stop() {
         synchronized (lock) {
             if (session != null) {
@@ -332,60 +208,6 @@ public final class JlibtorrentDownloadService implements TorrentDownloadService 
                 session = null;
                 activeFinished = null;
                 activeFailure = null;
-            }
-        }
-    }
-
-    private void runWarmup(
-            SessionManager activeWarmupSession,
-            Path torrentFile,
-            Path stateDirectory,
-            WarmupDiagnostics diagnostics,
-            TorrentProgressListener listener
-    ) {
-        long lastSaveNanos = 0L;
-        try {
-            TorrentInfo torrentInfo = new TorrentInfo(torrentFile.toFile());
-            diagnostics.reportTorrentInfo(torrentInfo);
-            activeWarmupSession.start(sessionParams(stateDirectory, listener));
-            activeWarmupSession.startDht();
-            Path warmupCache = stateDirectory.resolve(WARMUP_CACHE_DIRECTORY);
-            Files.createDirectories(warmupCache);
-            List<TcpEndpoint> fixedPeers = resolveFixedPeers(listener);
-            reportFixedPeers(fixedPeers, diagnostics);
-            addTorrent(
-                    activeWarmupSession,
-                    torrentInfo,
-                    warmupCache.toFile(),
-                    Priority.array(Priority.IGNORE, torrentInfo.numFiles()),
-                    fixedPeers,
-                    TorrentFlags.UPLOAD_MODE
-            );
-            activeWarmupSession.dhtGetPeers(torrentInfo.infoHashV1(), 1);
-            diagnostics.emitOnce("warmupStarted", "Peer discovery warm-up started.");
-            while (!warmupStopRequested) {
-                activeWarmupSession.postSessionStats();
-                activeWarmupSession.postDhtStats();
-                activeWarmupSession.postTorrentUpdates();
-                diagnostics.reportSession(activeWarmupSession);
-                long now = System.nanoTime();
-                if (lastSaveNanos == 0L || now - lastSaveNanos >= WARMUP_SAVE_INTERVAL_NANOS) {
-                    saveState(activeWarmupSession, stateDirectory, listener, false);
-                    lastSaveNanos = now;
-                }
-                activeWarmupSession.dhtGetPeers(torrentInfo.infoHashV1(), 1);
-                Thread.sleep(WARMUP_POLL_INTERVAL_MILLIS);
-            }
-        } catch (InterruptedException exc) {
-            Thread.currentThread().interrupt();
-        } catch (IOException | RuntimeException | ExceptionInInitializerError exc) {
-            listener.onStatusMessage("Peer discovery warm-up stopped after a network error.");
-        } finally {
-            boolean announceShutdown = warmupAnnounceStop;
-            saveState(activeWarmupSession, stateDirectory, listener, announceShutdown);
-            stopSession(activeWarmupSession, true);
-            if (announceShutdown) {
-                diagnostics.emitOnce("warmupStopped", "Peer discovery warm-up stopped.");
             }
         }
     }
@@ -440,7 +262,6 @@ public final class JlibtorrentDownloadService implements TorrentDownloadService 
             SessionManager session,
             TorrentInfo torrentInfo,
             File destination,
-            Priority[] priorities,
             List<TcpEndpoint> fixedPeers,
             com.frostwire.jlibtorrent.swig.torrent_flags_t flags
     ) {
@@ -448,9 +269,6 @@ public final class JlibtorrentDownloadService implements TorrentDownloadService 
         params.torrentInfo(torrentInfo);
         params.savePath(destination.getAbsolutePath());
         params.storageMode(StorageMode.STORAGE_MODE_SPARSE);
-        if (priorities != null) {
-            params.filePriorities(priorities);
-        }
         if (fixedPeers != null && !fixedPeers.isEmpty()) {
             params.peers(fixedPeers);
         }
@@ -494,7 +312,7 @@ public final class JlibtorrentDownloadService implements TorrentDownloadService 
         return List.copyOf(peers);
     }
 
-    private static void reportFixedPeers(List<TcpEndpoint> fixedPeers, WarmupDiagnostics diagnostics) {
+    private static void reportFixedPeers(List<TcpEndpoint> fixedPeers, TorrentDiagnostics diagnostics) {
         if (!fixedPeers.isEmpty()) {
             diagnostics.emitOnce("fixedPeers", "Using " + fixedPeers.size() + " fixed seed peer endpoint(s).");
         }
@@ -517,7 +335,7 @@ public final class JlibtorrentDownloadService implements TorrentDownloadService 
         }
     }
 
-    private static void forceAnnounce(TorrentHandle handle, WarmupDiagnostics diagnostics, boolean allTrackers) {
+    private static void forceAnnounce(TorrentHandle handle, TorrentDiagnostics diagnostics, boolean allTrackers) {
         if (handle == null) {
             return;
         }
@@ -603,7 +421,7 @@ public final class JlibtorrentDownloadService implements TorrentDownloadService 
     ) {
     }
 
-    private static final class WarmupDiagnostics {
+    private static final class TorrentDiagnostics {
         private static final long OCCASIONAL_INTERVAL_NANOS = 30_000_000_000L;
         private static final long TRACKER_SUMMARY_INTERVAL_NANOS = 120_000_000_000L;
 
@@ -620,7 +438,7 @@ public final class JlibtorrentDownloadService implements TorrentDownloadService 
         private long firstBlockNanos;
         private long lastBlockProgressNanos;
 
-        private WarmupDiagnostics(TorrentProgressListener listener) {
+        private TorrentDiagnostics(TorrentProgressListener listener) {
             this.listener = listener;
         }
 
@@ -672,15 +490,6 @@ public final class JlibtorrentDownloadService implements TorrentDownloadService 
             } catch (RuntimeException ignored) {
                 // Tracker diagnostics should never block the download.
             }
-        }
-
-        private void reportTorrentInfo(TorrentInfo torrentInfo) {
-            try {
-                emitOnce("trackersLoaded", "Loaded " + torrentInfo.trackers().size() + " tracker entries from torrent.");
-            } catch (RuntimeException ignored) {
-                // Tracker diagnostics should never block warm-up.
-            }
-            emitOnce("warmupTorrent", "Warming peer discovery for bundled client torrent.");
         }
 
         private void reportSession(SessionManager session) {

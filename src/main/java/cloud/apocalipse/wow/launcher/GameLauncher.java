@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 final class GameLauncher {
@@ -38,6 +39,7 @@ final class GameLauncher {
                 throw new IOException(executableName + " is already running.");
             }
         }
+        deleteCacheDirectory(wowDirectory);
         List<String> command = new ArrayList<>();
         command.add(executable.toString());
         command.addAll(arguments);
@@ -57,5 +59,20 @@ final class GameLauncher {
                 onExit.run();
             }
         });
+    }
+
+    private void deleteCacheDirectory(Path wowDirectory) throws IOException {
+        Path cacheDirectory = wowDirectory.resolve("Cache");
+        if (!Files.exists(cacheDirectory)) {
+            return;
+        }
+        if (!Files.isDirectory(cacheDirectory)) {
+            throw new IOException("Cache path is not a directory: " + cacheDirectory);
+        }
+        try (var stream = Files.walk(cacheDirectory)) {
+            for (Path path : stream.sorted(Comparator.reverseOrder()).toList()) {
+                Files.deleteIfExists(path);
+            }
+        }
     }
 }

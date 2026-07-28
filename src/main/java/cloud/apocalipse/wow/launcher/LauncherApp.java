@@ -247,7 +247,6 @@ public final class LauncherApp extends Application {
             log(t("log.launcherReady"));
             writeStartupLog("Launcher UI initialized.", null);
             validateConfiguredWowDirectory();
-            startClientDownloadWarmup();
             startRealmStatusRefresh();
             refreshNews();
             if (config.wowDirectory().isEmpty()) {
@@ -279,15 +278,6 @@ public final class LauncherApp extends Application {
                 log(t("log.savedWowFolderMissing"));
             }
         });
-    }
-
-    @Override
-    public void stop() {
-        try {
-            clientInstallManager.stopWarmup();
-        } catch (Exception exc) {
-            writeStartupLog("Client download warm-up shutdown failed.", exc);
-        }
     }
 
     private HBox titleBar(Stage stage) {
@@ -911,32 +901,6 @@ public final class LauncherApp extends Application {
         return selectedPath;
     }
 
-    private void startClientDownloadWarmup() {
-        Thread thread = new Thread(() -> {
-            try {
-                clientInstallManager.startWarmup(new PatchProgress() {
-                    @Override
-                    public void message(String message) {
-                    }
-
-                    @Override
-                    public void progress(double value) {
-                    }
-
-                    @Override
-                    public void detail(String message) {
-                        String translatedMessage = translateClientInstallMessage(message);
-                        Platform.runLater(() -> log(translatedMessage));
-                    }
-                });
-            } catch (Exception exc) {
-                Platform.runLater(() -> log(t("log.clientWarmupFailed") + ": " + translateErrorMessage(exc.getMessage())));
-            }
-        }, "apocalipse-wow-client-warmup-start");
-        thread.setDaemon(true);
-        thread.start();
-    }
-
     private void cancelClientDownload() {
         if (!clientInstallInProgress) {
             return;
@@ -1385,22 +1349,6 @@ public final class LauncherApp extends Application {
         if (message.startsWith("Client download complete: ")) {
             return t("client.complete").replace("{folder}", message.substring("Client download complete: ".length()));
         }
-        if (message.equals("Peer discovery warm-up started.")) {
-            return t("client.warmupStarted");
-        }
-        if (message.equals("Peer discovery warm-up stopped.")) {
-            return t("client.warmupStopped");
-        }
-        if (message.equals("Peer discovery warm-up stopped after a network error.")
-                || message.equals("Peer discovery warm-up reported a network error.")) {
-            return t("client.warmupNetworkError");
-        }
-        if (message.equals("Warming peer discovery for bundled client torrent.")) {
-            return t("client.warmupTorrent");
-        }
-        if (message.equals("Client torrent registered for source discovery.")) {
-            return t("client.warmupTorrentRegistered");
-        }
         if (message.startsWith("Using ") && message.endsWith(" fixed seed peer endpoint(s).")) {
             String count = message.substring("Using ".length(), message.indexOf(" fixed seed"));
             return t("client.fixedSeedPeers").replace("{count}", count);
@@ -1412,22 +1360,19 @@ public final class LauncherApp extends Application {
             return t("client.fixedSeedResolveFailed")
                     .replace("{peer}", message.substring("Fixed seed peer could not be resolved: ".length()));
         }
-        if (message.equals("Peer discovery lookup is active for the client download.")) {
-            return t("client.warmupLookup");
-        }
         if (message.equals("Loaded saved peer discovery state.")) {
-            return t("client.warmupStateLoaded");
+            return t("client.discoveryStateLoaded");
         }
         if (message.equals("Saved peer discovery state.")) {
-            return t("client.warmupStateSaved");
+            return t("client.discoveryStateSaved");
         }
         if (message.equals("Saved peer discovery state could not be loaded.")) {
-            return t("client.warmupStateLoadFailed");
+            return t("client.discoveryStateLoadFailed");
         }
         if (message.equals("Peer discovery state could not be saved.")) {
-            return t("client.warmupStateSaveFailed");
+            return t("client.discoveryStateSaveFailed");
         }
-        if (message.equals("Client download registered. Warming up network...")) {
+        if (message.equals("Client download registered.")) {
             return t("client.networkRegistered");
         }
         if (message.equals("Network listener ready.")) {
@@ -1716,7 +1661,6 @@ public final class LauncherApp extends Application {
                 case "log.gameClosed" -> "Wow.exe foi fechado.";
                 case "log.clientInstalled" -> "Cliente instalado";
                 case "log.clientInstallFailed" -> "Falha ao baixar cliente";
-                case "log.clientWarmupFailed" -> "A preparação da rede de download falhou";
                 case "log.clientDownloadCancelRequested" -> "Cancelando download do cliente...";
                 case "log.clientDownloadCancelled" -> "Download do cliente cancelado. Arquivos parciais removidos.";
                 case "log.realmUnavailable" -> "Status do reino indisponível";
@@ -1739,20 +1683,14 @@ public final class LauncherApp extends Application {
                 case "client.cleaningCancelled" -> "Removendo arquivos parciais...";
                 case "client.downloadComplete" -> "Download do cliente concluído.";
                 case "client.complete" -> "Cliente pronto: {folder}";
-                case "client.warmupStarted" -> "Preparação da rede de fontes iniciada.";
-                case "client.warmupStopped" -> "Preparação da rede de fontes pausada.";
-                case "client.warmupNetworkError" -> "A preparação da rede encontrou um erro de conexão.";
-                case "client.warmupTorrent" -> "Preparando descoberta de fontes para o download do cliente.";
-                case "client.warmupTorrentRegistered" -> "Torrent do cliente registrado para descoberta de fontes.";
                 case "client.fixedSeedPeers" -> "Servidor de seed fixo carregado: {count} endpoint(s).";
                 case "client.fixedSeedInvalid" -> "Servidor de seed fixo ignorado por endereço inválido.";
                 case "client.fixedSeedResolveFailed" -> "Não foi possível resolver o servidor de seed fixo: {peer}";
-                case "client.warmupLookup" -> "Busca de fontes ativa para o download do cliente.";
-                case "client.warmupStateLoaded" -> "Estado salvo de descoberta de fontes carregado.";
-                case "client.warmupStateSaved" -> "Estado de descoberta de fontes salvo.";
-                case "client.warmupStateLoadFailed" -> "Não foi possível carregar o estado salvo de descoberta de fontes.";
-                case "client.warmupStateSaveFailed" -> "Não foi possível salvar o estado de descoberta de fontes.";
-                case "client.networkRegistered" -> "Download registrado. Preparando rede...";
+                case "client.discoveryStateLoaded" -> "Estado salvo de descoberta de fontes carregado.";
+                case "client.discoveryStateSaved" -> "Estado de descoberta de fontes salvo.";
+                case "client.discoveryStateLoadFailed" -> "Não foi possível carregar o estado salvo de descoberta de fontes.";
+                case "client.discoveryStateSaveFailed" -> "Não foi possível salvar o estado de descoberta de fontes.";
+                case "client.networkRegistered" -> "Download registrado.";
                 case "client.networkListening" -> "Conexão de rede pronta.";
                 case "client.dhtReady" -> "Descoberta de pares pronta.";
                 case "client.trackerPeers" -> "Rastreador encontrou {count} fonte(s).";
@@ -1864,7 +1802,6 @@ public final class LauncherApp extends Application {
                 case "log.gameClosed" -> "Wow.exe closed.";
                 case "log.clientInstalled" -> "Client installed";
                 case "log.clientInstallFailed" -> "Client download failed";
-                case "log.clientWarmupFailed" -> "Download network warm-up failed";
                 case "log.clientDownloadCancelRequested" -> "Cancelling client download...";
                 case "log.clientDownloadCancelled" -> "Client download cancelled. Partial files removed.";
                 case "log.realmUnavailable" -> "Realm status unavailable";
@@ -1887,20 +1824,14 @@ public final class LauncherApp extends Application {
                 case "client.cleaningCancelled" -> "Removing partial files...";
                 case "client.downloadComplete" -> "Client download complete.";
                 case "client.complete" -> "Client ready: {folder}";
-                case "client.warmupStarted" -> "Source network warm-up started.";
-                case "client.warmupStopped" -> "Source network warm-up paused.";
-                case "client.warmupNetworkError" -> "Source network warm-up hit a connection error.";
-                case "client.warmupTorrent" -> "Warming source discovery for the client download.";
-                case "client.warmupTorrentRegistered" -> "Client torrent registered for source discovery.";
                 case "client.fixedSeedPeers" -> "Fixed seed server loaded: {count} endpoint(s).";
                 case "client.fixedSeedInvalid" -> "Fixed seed server ignored because its address is invalid.";
                 case "client.fixedSeedResolveFailed" -> "Could not resolve fixed seed server: {peer}";
-                case "client.warmupLookup" -> "Source lookup is active for the client download.";
-                case "client.warmupStateLoaded" -> "Loaded saved source discovery state.";
-                case "client.warmupStateSaved" -> "Saved source discovery state.";
-                case "client.warmupStateLoadFailed" -> "Could not load saved source discovery state.";
-                case "client.warmupStateSaveFailed" -> "Could not save source discovery state.";
-                case "client.networkRegistered" -> "Download registered. Warming up network...";
+                case "client.discoveryStateLoaded" -> "Loaded saved source discovery state.";
+                case "client.discoveryStateSaved" -> "Saved source discovery state.";
+                case "client.discoveryStateLoadFailed" -> "Could not load saved source discovery state.";
+                case "client.discoveryStateSaveFailed" -> "Could not save source discovery state.";
+                case "client.networkRegistered" -> "Download registered.";
                 case "client.networkListening" -> "Network listener ready.";
                 case "client.dhtReady" -> "Peer discovery network ready.";
                 case "client.trackerPeers" -> "Tracker found {count} source(s).";
@@ -2012,7 +1943,6 @@ public final class LauncherApp extends Application {
                 case "log.gameClosed" -> "Wow.exe fue cerrado.";
                 case "log.clientInstalled" -> "Cliente instalado";
                 case "log.clientInstallFailed" -> "Error al descargar cliente";
-                case "log.clientWarmupFailed" -> "Error al preparar la red de descarga";
                 case "log.clientDownloadCancelRequested" -> "Cancelando descarga del cliente...";
                 case "log.clientDownloadCancelled" -> "Descarga del cliente cancelada. Archivos parciales eliminados.";
                 case "log.realmUnavailable" -> "Estado del reino no disponible";
@@ -2035,20 +1965,14 @@ public final class LauncherApp extends Application {
                 case "client.cleaningCancelled" -> "Eliminando archivos parciales...";
                 case "client.downloadComplete" -> "Descarga del cliente completada.";
                 case "client.complete" -> "Cliente listo: {folder}";
-                case "client.warmupStarted" -> "Preparación de red de fuentes iniciada.";
-                case "client.warmupStopped" -> "Preparación de red de fuentes pausada.";
-                case "client.warmupNetworkError" -> "La preparación de red encontró un error de conexión.";
-                case "client.warmupTorrent" -> "Preparando descubrimiento de fuentes para la descarga del cliente.";
-                case "client.warmupTorrentRegistered" -> "Torrent del cliente registrado para descubrimiento de fuentes.";
                 case "client.fixedSeedPeers" -> "Servidor seed fijo cargado: {count} endpoint(s).";
                 case "client.fixedSeedInvalid" -> "Servidor seed fijo ignorado por dirección inválida.";
                 case "client.fixedSeedResolveFailed" -> "No se pudo resolver el servidor seed fijo: {peer}";
-                case "client.warmupLookup" -> "Búsqueda de fuentes activa para la descarga del cliente.";
-                case "client.warmupStateLoaded" -> "Estado guardado de descubrimiento de fuentes cargado.";
-                case "client.warmupStateSaved" -> "Estado de descubrimiento de fuentes guardado.";
-                case "client.warmupStateLoadFailed" -> "No se pudo cargar el estado guardado de descubrimiento de fuentes.";
-                case "client.warmupStateSaveFailed" -> "No se pudo guardar el estado de descubrimiento de fuentes.";
-                case "client.networkRegistered" -> "Descarga registrada. Preparando red...";
+                case "client.discoveryStateLoaded" -> "Estado guardado de descubrimiento de fuentes cargado.";
+                case "client.discoveryStateSaved" -> "Estado de descubrimiento de fuentes guardado.";
+                case "client.discoveryStateLoadFailed" -> "No se pudo cargar el estado guardado de descubrimiento de fuentes.";
+                case "client.discoveryStateSaveFailed" -> "No se pudo guardar el estado de descubrimiento de fuentes.";
+                case "client.networkRegistered" -> "Descarga registrada.";
                 case "client.networkListening" -> "Conexión de red lista.";
                 case "client.dhtReady" -> "Descubrimiento de pares listo.";
                 case "client.trackerPeers" -> "Rastreador encontró {count} fuente(s).";

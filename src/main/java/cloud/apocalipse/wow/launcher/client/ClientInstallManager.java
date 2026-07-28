@@ -28,7 +28,6 @@ public final class ClientInstallManager {
     private final Path torrentStateDirectory;
     private volatile boolean cancelRequested;
     private volatile Path activeDownloadDestination;
-    private volatile Path warmupTorrentFile;
     private Set<Path> preexistingDownloadPaths = Set.of();
     private long lastProgressEmitNanos;
     private int lastProgressPercent = -1;
@@ -61,7 +60,6 @@ public final class ClientInstallManager {
         Files.createDirectories(destination);
         preexistingDownloadPaths = snapshotExistingPaths(destination);
         activeDownloadDestination = destination;
-        stopWarmup(false);
         Path torrentFile = copyBundledTorrentToTemp();
         try {
             torrentDownloadService.download(torrentFile, destination, torrentStateDirectory, new cloud.apocalipse.wow.launcher.torrent.TorrentProgressListener() {
@@ -113,40 +111,6 @@ public final class ClientInstallManager {
         Thread thread = new Thread(torrentDownloadService::stop, "client-download-cancel");
         thread.setDaemon(true);
         thread.start();
-    }
-
-    public void startWarmup(PatchProgress progress) throws IOException {
-        Path torrentFile = copyBundledTorrentToTemp();
-        warmupTorrentFile = torrentFile;
-        try {
-            torrentDownloadService.startWarmup(torrentFile, torrentStateDirectory, new cloud.apocalipse.wow.launcher.torrent.TorrentProgressListener() {
-                @Override
-                public void onProgress(TorrentProgress torrentProgress) {
-                }
-
-                @Override
-                public void onStatusMessage(String message) {
-                    progress.detail(message);
-                }
-            });
-        } catch (Exception exc) {
-            Files.deleteIfExists(torrentFile);
-            warmupTorrentFile = null;
-            throw new IOException("Client download warm-up failed.", exc);
-        }
-    }
-
-    public void stopWarmup() throws IOException {
-        stopWarmup(true);
-    }
-
-    private void stopWarmup(boolean announceStop) throws IOException {
-        torrentDownloadService.stopWarmup(announceStop);
-        Path torrentFile = warmupTorrentFile;
-        warmupTorrentFile = null;
-        if (torrentFile != null) {
-            Files.deleteIfExists(torrentFile);
-        }
     }
 
     public Path defaultInstallDirectory() {

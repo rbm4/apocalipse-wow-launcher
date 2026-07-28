@@ -91,7 +91,8 @@ which is ignored by Git.
 6. Verify the download before installing it as `Data/patch-A.MPQ`.
 7. Remove older launcher-managed `patch-apocalipse-*.mpq` files.
 8. Unlock `Launch WoW` after verification succeeds.
-9. Launch `Wow.exe`.
+9. Delete the client `Cache` folder.
+10. Launch `Wow.exe`.
 
 On first launch, the user is prompted to choose the WoW folder. Later changes are available through
 the launcher `Options` button.
