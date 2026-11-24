@@ -5,7 +5,7 @@
             "type": "java",
             "name": "LauncherApp",
             "request": "launch",
-            "mainClass": "cloud.apocalipse.wow.launcher.LauncherApp",
+            "mainClass": "cloud.apocalipse.launcher.LauncherApp",
             "projectName": "apocalipse-wow-launcher",
             "preLaunchTask": "mvn package",
             "vmArgs": "--module-path \"${workspaceFolder}/target/launcher-input\" --add-modules javafx.controls,javafx.web"

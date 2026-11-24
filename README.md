@@ -1,104 +1,49 @@
-# Apocalipse WoW Launcher
+# Launcher Apocalipse BR
 
-JavaFX launcher for synchronizing Apocalipse WoW client MPQ patches and starting the 3.3.5a client.
+[Read in English](#english)
 
-## Requirements
+O launcher oficial da comunidade Apocalipse BR mantém seu cliente do **Apocalipse WoW (3.3.5a)** atualizado e abre o jogo no Windows.
 
-- JDK 25+ with `jpackage` available on `PATH` or under `JAVA_HOME/bin`.
-- Maven 3.9+.
-- Windows is required for building Windows `.exe` or `.msi` installers with `jpackage`.
-- WiX Toolset is required by `jpackage` for Windows `.exe` and `.msi` installers.
+## Como instalar e jogar
 
-## Development
+1. Baixe o instalador `.msi` da versão mais recente. [Versões oficiais no GitHub](https://github.com/rbm4/apocalipse-wow-launcher/releases)
+2. Execute o instalador e abra o launcher pelo atalho.
+3. Em **Opções**, escolha **Baixar cliente** ou indique a pasta que já contém o `Wow.exe`.
+4. Clique em **Atualizar e Jogar** para verificar o patch, baixar a versão atual quando necessário e abrir o jogo.
 
-Run the launcher:
+## Como conferir o que você está instalando
 
-```powershell
-mvn javafx:run
-```
+O código do launcher é público para que jogadores e revisores independentes possam conferir o que ele baixa, quais arquivos do jogo altera e como abre o cliente. Na página da versão que você baixou, o link da tag leva ao código correspondente.
 
-Build the application jar and dependency input directory:
+- **Instalador**. O VirusTotal permite procurar um relatório existente usando o SHA-256 do arquivo. [Como consultar no VirusTotal](https://docs.virustotal.com/docs/searching)
+- **Código-fonte**. O CodeQL ajuda revisores a encontrar possíveis falhas de segurança no código Java. [Como funciona o CodeQL](https://docs.github.com/en/code-security/concepts/code-scanning/codeql/codeql-code-scanning)
 
-```powershell
-mvn clean package
-```
+Cada verificação cobre uma parte diferente. A leitura do código permite entender o comportamento do launcher. A consulta pelo SHA-256 identifica o arquivo exato que você baixou. [Guia de verificação e critérios de confiança](.docs/security/inspection.md)
 
-The packaging input is written to:
+## Documentação técnica
 
-```text
-target/launcher-input
-```
+O código é mantido para o launcher da comunidade Apocalipse BR. Os detalhes de arquitetura, compilação e publicação ficam na [documentação do projeto](.docs/AGENTS.md).
 
-## Native Packages
+## English
 
-Build a portable Windows application image:
+The official Apocalipse BR community launcher keeps your **Apocalipse WoW (3.3.5a)** client up to date and opens the game on Windows.
 
-```powershell
-mvn clean verify -Pjpackage-app-image
-```
+### Install and play
 
-Build a Windows `.exe` installer:
+1. Download the latest `.msi` installer. [Official GitHub releases](https://github.com/rbm4/apocalipse-wow-launcher/releases)
+2. Run the installer and open the launcher from its shortcut.
+3. Under **Options**, choose **Download Client** or select the folder that already contains `Wow.exe`.
+4. Click **Update & Play** to check the patch, download the current version if needed, and open the game.
 
-```powershell
-mvn clean verify -Pjpackage-exe
-```
+### How to check what you’re installing
 
-Build a Windows `.msi` installer:
+The launcher’s source is public so players and independent reviewers can see what it downloads, which game files it changes, and how it starts the client. The tag on the release page takes you to the source for that version.
 
-```powershell
-mvn clean verify -Pjpackage-msi
-```
+- **Installer**. VirusTotal lets you look up an existing report using the file’s SHA-256 hash. [How to search VirusTotal](https://docs.virustotal.com/docs/searching)
+- **Source code**. CodeQL helps reviewers find potential security issues in Java code. [How CodeQL works](https://docs.github.com/en/code-security/concepts/code-scanning/codeql/codeql-code-scanning)
 
-Outputs are written under:
+Each check covers a different part of the process. The source shows how the launcher works. A SHA-256 lookup identifies the exact file you downloaded. [Verification and trust guide](.docs/security/inspection.md)
 
-```text
-target/jpackage
-```
+### Technical documentation
 
-Unsigned installers work, but Windows SmartScreen may warn users that the publisher is unknown.
-
-If installer builds fail with `Can not find WiX tools`, install WiX Toolset and make sure `wix.exe`
-or WiX v3 `candle.exe`/`light.exe` are on `PATH`. The `jpackage-app-image` profile does not need WiX.
-
-## Release Workflow
-
-MSI packaging is done locally on Windows because `jpackage --type msi` depends on Windows tooling.
-Use the local release script to check dependencies, build the installer, and optionally publish a
-GitHub release:
-
-```powershell
-.\build-local-msi.ps1
-```
-
-For the full interactive release flow:
-
-```powershell
-.\build-local-msi.ps1 -Release
-```
-
-The script can prompt to install missing local dependencies with Chocolatey or winget, prompt to bump
-`pom.xml`, build the MSI, create a `launcher-v<project.version>` tag/release with GitHub CLI, and
-upload the generated `.msi` as a release asset. Local release outputs are written to `.local-release/`,
-which is ignored by Git.
-
-## Current Launcher Flow
-
-1. Select the WoW 3.3.5a folder.
-2. The launcher writes `set realmlist wow.apocalipse.cloud`.
-3. Fetch the fixed backend manifest.
-4. Compare `Data/patch-A.MPQ` by SHA-256.
-5. Download the backend MPQ artifact if missing or outdated.
-6. Verify the download before installing it as `Data/patch-A.MPQ`.
-7. Remove older launcher-managed `patch-apocalipse-*.mpq` files.
-8. Unlock `Launch WoW` after verification succeeds.
-9. Delete the client `Cache` folder.
-10. Launch `Wow.exe`.
-
-On first launch, the user is prompted to choose the WoW folder. Later changes are available through
-the launcher `Options` button.
-
-Default manifest:
-
-```text
-https://wow.apocalipse.cloud/patches/manifest.json
-```
+The source is maintained for the Apocalipse BR community launcher. Architecture, build, and release details are in the [project documentation](.docs/AGENTS.md).

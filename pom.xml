@@ -14,7 +14,7 @@
         <maven.compiler.release>25</maven.compiler.release>
         <javafx.version>25.0.1</javafx.version>
         <jlibtorrent.version>2.0.12.9</jlibtorrent.version>
-        <launcher.mainClass>cloud.apocalipse.wow.launcher.LauncherMain</launcher.mainClass>
+        <launcher.mainClass>cloud.apocalipse.launcher.LauncherMain</launcher.mainClass>
         <jpackage.appName>ApocalipseWoW</jpackage.appName>
         <jpackage.vendor>ApocalipseWoW</jpackage.vendor>
         <jpackage.description>Apocalipse WoW Launcher. The installer creates a desktop shortcut.</jpackage.description>
