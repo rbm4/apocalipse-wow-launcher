@@ -22,14 +22,23 @@ public final class WindowTitleBar extends HBox {
     private double restoreWidth;
     private double restoreHeight;
     private boolean manuallyMaximized;
+    private final Button gameSwitchButton;
+    private final Button otherGameButton;
 
-    public WindowTitleBar(Stage stage, String title) {
+    public WindowTitleBar(Stage stage, String title, String actionText, Runnable onAction,
+                          String otherGameText, Runnable onOtherGame) {
         setSpacing(8);
         windowTitleLabel = new Label(title);
         windowTitleLabel.getStyleClass().add("window-title");
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
 
+        gameSwitchButton = new Button(actionText);
+        gameSwitchButton.getStyleClass().add("window-switch-button");
+        gameSwitchButton.setOnAction(event -> onAction.run());
+        otherGameButton = new Button(otherGameText);
+        otherGameButton.getStyleClass().add("window-switch-button");
+        otherGameButton.setOnAction(event -> onOtherGame.run());
         Button minimize = windowButton(minimizeIcon());
         minimize.setOnAction(event -> stage.setIconified(true));
         Button maximize = windowButton(maximizeIcon());
@@ -38,7 +47,7 @@ public final class WindowTitleBar extends HBox {
         close.getStyleClass().add("close-button");
         close.setOnAction(event -> stage.close());
 
-        getChildren().addAll(windowTitleLabel, spacer, minimize, maximize, close);
+        getChildren().addAll(windowTitleLabel, spacer, gameSwitchButton, otherGameButton, minimize, maximize, close);
         setAlignment(Pos.CENTER_LEFT);
         getStyleClass().add("title-bar");
         setOnMousePressed(event -> {
@@ -60,6 +69,24 @@ public final class WindowTitleBar extends HBox {
 
     public void setTitle(String title) {
         windowTitleLabel.setText(title);
+    }
+
+    public void setActionText(String text) {
+        gameSwitchButton.setText(text);
+    }
+
+    public void setActionVisible(boolean visible) {
+        gameSwitchButton.setVisible(visible);
+        gameSwitchButton.setManaged(visible);
+    }
+
+    public void setOtherGameText(String text) {
+        otherGameButton.setText(text);
+    }
+
+    public void setOtherGameVisible(boolean visible) {
+        otherGameButton.setVisible(visible);
+        otherGameButton.setManaged(visible);
     }
 
     private void toggleMaximize(Stage stage) {

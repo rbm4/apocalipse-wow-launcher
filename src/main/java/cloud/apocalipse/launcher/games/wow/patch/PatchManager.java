@@ -1,5 +1,6 @@
 package cloud.apocalipse.launcher.games.wow.patch;
 
+import cloud.apocalipse.launcher.core.FileHashes;
 import cloud.apocalipse.launcher.core.OperationProgress;
 
 import java.io.IOException;

@@ -1,6 +1,5 @@
 package cloud.apocalipse.launcher.ui.wow;
 
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
@@ -35,7 +34,6 @@ final class WowOptionsPane extends VBox {
             Runnable downloadClient,
             Runnable chooseExistingClient
     ) {
-        super(18);
         this.text = text;
         optionsTitleLabel = new Label(t("options.title"));
         optionsTitleLabel.getStyleClass().add("hero-title");
@@ -44,9 +42,7 @@ final class WowOptionsPane extends VBox {
         setupPanel = setupPanel(downloadClient, chooseExistingClient);
 
         GridPane form = new GridPane();
-        form.setHgap(14);
-        form.setVgap(14);
-        form.getStyleClass().add("glass-panel");
+        form.getStyleClass().addAll("glass-panel", "options-form");
 
         folderLabel = new Label(t("options.gameDirectory"));
         folderLabel.getStyleClass().add("section-label");
@@ -67,7 +63,7 @@ final class WowOptionsPane extends VBox {
         GridPane.setHgrow(languageCombo, Priority.ALWAYS);
 
         getChildren().addAll(optionsTitleLabel, optionsDescriptionLabel, setupPanel, form);
-        setPadding(new Insets(22));
+        getStyleClass().add("launcher-page");
     }
 
     private VBox setupPanel(Runnable downloadClient, Runnable chooseExistingClient) {

@@ -7,7 +7,6 @@ import cloud.apocalipse.launcher.games.wow.community.RealmStatus;
 import cloud.apocalipse.launcher.games.wow.config.LauncherConfig;
 import cloud.apocalipse.launcher.games.wow.patch.PatchManifest;
 import cloud.apocalipse.launcher.infrastructure.diagnostics.StartupLog;
-import cloud.apocalipse.launcher.ui.shell.WindowTitleBar;
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
 import javafx.application.Platform;
@@ -15,7 +14,7 @@ import javafx.beans.binding.Bindings;
 import javafx.concurrent.Task;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
-import javafx.scene.Scene;
+import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Hyperlink;
@@ -30,7 +29,6 @@ import javafx.scene.control.TextArea;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.AnchorPane;
-import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
@@ -41,7 +39,6 @@ import javafx.scene.shape.Rectangle;
 import javafx.scene.web.WebView;
 import javafx.stage.DirectoryChooser;
 import javafx.stage.Stage;
-import javafx.stage.StageStyle;
 
 import java.io.File;
 import java.nio.file.Files;
@@ -57,13 +54,13 @@ public final class WowLauncherView {
 
     private final LauncherConfig config;
     private final WowLauncher wow;
+    private final Runnable languageChanged;
     private final WowMessages messages = new WowMessages(this::t);
     private final List<NewsCardSlot> newsCards = new ArrayList<>();
 
     private Label wowPathLabel;
     private ProgressBar progressBar;
     private Label statusLabel;
-    private WindowTitleBar windowTitleBar;
     private Label heroSubtitleLabel;
     private Label releaseBadgeLabel;
     private Label realmHeadlineLabel;
@@ -109,12 +106,17 @@ public final class WowLauncherView {
     private boolean clientInstallInProgress;
 
     public WowLauncherView(LauncherConfig config, WowLauncher wow) {
-        this.config = config;
-        this.wow = wow;
+        this(config, wow, () -> {
+        });
     }
 
-    public void show(Stage stage) {
-        stage.initStyle(StageStyle.UNDECORATED);
+    public WowLauncherView(LauncherConfig config, WowLauncher wow, Runnable languageChanged) {
+        this.config = config;
+        this.wow = wow;
+        this.languageChanged = languageChanged;
+    }
+
+    public Node createContent(Stage stage) {
         language = AppLanguage.fromCode(config.language());
         wowPathLabel = new Label();
         refreshWowPathLabel();
@@ -180,6 +182,7 @@ public final class WowLauncherView {
             config.setLanguage(language.code());
             saveConfig();
             refreshTexts();
+            languageChanged.run();
         });
 
         tabs = new TabPane();
@@ -194,27 +197,6 @@ public final class WowLauncherView {
         tabs.getTabs().addAll(homeTab, optionsTab, websiteTab);
 
         StackPane tabSurface = tabSurface();
-        BorderPane root = new BorderPane();
-        windowTitleBar = new WindowTitleBar(stage, t("window.title"));
-        root.setTop(windowTitleBar);
-        root.setCenter(tabSurface);
-        root.getStyleClass().add("root-shell");
-
-        Scene scene = new Scene(root, 1200, 760);
-        scene.getStylesheets().add(getClass().getResource("/launcher.css").toExternalForm());
-        stage.setTitle(t("window.title"));
-        stage.getIcons().add(new Image(getClass().getResourceAsStream("/Apocalipse_wow_icon.png")));
-        stage.setScene(scene);
-        stage.setMinWidth(1080);
-        stage.setMinHeight(680);
-        stage.centerOnScreen();
-        stage.setOnShown(event -> {
-            StartupLog.write("Launcher window shown.", null);
-            stage.toFront();
-            stage.requestFocus();
-        });
-        stage.show();
-
         log(t("log.launcherReady"));
         StartupLog.write("Launcher UI initialized.", null);
         validateConfiguredWowDirectory();
@@ -232,6 +214,7 @@ public final class WowLauncherView {
                 }
             });
         }
+        return tabSurface;
     }
 
     private void validateConfiguredWowDirectory() {
@@ -293,8 +276,9 @@ public final class WowLauncherView {
         heroSubtitleLabel = new Label(t("home.subtitle"));
         heroSubtitleLabel.getStyleClass().add("hero-subtitle");
 
-        VBox heroText = new VBox(8, titleRow, heroSubtitleLabel, actionRow(), releaseBadge());
+        VBox heroText = new VBox(titleRow, heroSubtitleLabel, actionRow(), releaseBadge());
         heroText.setAlignment(Pos.CENTER_LEFT);
+        heroText.getStyleClass().add("hero-copy");
         HBox hero = new HBox(24, heroText, sidePanel());
         hero.setAlignment(Pos.CENTER_LEFT);
         HBox.setHgrow(heroText, Priority.ALWAYS);
@@ -976,9 +960,6 @@ public final class WowLauncherView {
         }
         if (websiteTab != null) {
             websiteTab.setText(t("tab.website"));
-        }
-        if (windowTitleBar != null) {
-            windowTitleBar.setTitle(t("window.title"));
         }
         browseButton.setText(t("button.chooseFolder"));
         installClientButton.setText(t("button.downloadClient"));

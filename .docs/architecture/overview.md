@@ -4,11 +4,14 @@ Java sources live under [`cloud.apocalipse.launcher`](../../src/main/java/cloud/
 
 | Package | Responsibility |
 | --- | --- |
-| `ui.shell` | Reusable JavaFX window chrome |
+| `ui` and `ui.shell` | Shared launcher window, game selection and reusable JavaFX window chrome |
 | `ui.wow` | WoW tabs, setup and options pane, actions, task bindings, and localized messages |
+| `ui.zomboid` | Project Zomboid launcher screen |
 | `games.wow` | JavaFX-free game operations exposed by `WowLauncher` |
 | `games.wow.client`, `games.wow.patch`, `games.wow.launch`, `games.wow.community`, `games.wow.config` | WoW client installation, patch verification, process launch, portal data, and settings |
-| `core` and `core.torrent` | Operation progress callbacks and the download contract, events, and types |
+| `games.zomboid` | Project Zomboid Steam detection, verified agent cache, and process launch on Windows |
+| `games.zomboid.config` | Project Zomboid installation and optimization settings |
+| `core` and `core.torrent` | File hashing, operation progress callbacks, and the download contract, events, and types |
 | `infrastructure` | jlibtorrent adapter, persistent web cookies, and startup diagnostics |
 
 ## Data flow
@@ -18,10 +21,16 @@ Java sources live under [`cloud.apocalipse.launcher`](../../src/main/java/cloud/
 3. Game operations return values, throw failures, or report progress through `OperationProgress`. The view adapts these to JavaFX task properties, translates messages, and applies completion handlers on the JavaFX thread. Game exit notifications are marshalled to the same thread.
 4. `ClientInstallManager` downloads through the `TorrentDownloadService` interface. `LauncherApp` supplies the jlibtorrent implementation. The game service and shared contracts have no JavaFX dependency.
 
-The current WoW view still owns the order of setup, update, and play. `WowOptionsPane` renders setup and settings controls and emits actions through callbacks. It leaves persistence and game actions to the view and services.
+`LauncherView` owns the single JavaFX window and routes between game views. The selected game is persisted separately from the WoW settings; the title bar can return to game selection or switch directly to the other game without replacing the window. `WowLauncherView` creates its tabbed content while leaving the shared stage, title bar, and navigation to the application shell. Its current game workflow remains unchanged.
+
+The Project Zomboid view has its own home, options, and website tabs. It stores the selected installation directory under the shared application data directory and uses the persistent JavaFX WebView cookie store installed during startup. The website tab opens `https://plataforma.apocalipse.cloud/`. The launcher background uses `loginhospital.png`.
+
+Game selection and the Project Zomboid launcher follow the WoW content insets, heading styles, and panel spacing defined in `launcher.css`. The game selector centers the heading and a row of two equally sized cards. The cards display `wow.jpg` and `pz-card.jpg`. The latter is a JavaFX-compatible JPEG made from `pz.webp`.
+
+`WowOptionsPane` renders setup and settings controls and emits actions through callbacks. It leaves persistence and game actions to the WoW view and services.
 
 ## Adding a game
 
 - Put its operations and settings under `games.<game>` and its JavaFX screens under `ui.<game>`. Keep WoW paths, URLs, patch formats, and launch switches in the WoW integration.
-- Wire each view and service from the application entry point as navigation is introduced. Keep game selection and transitions in the JavaFX layer.
+- Wire each view and service through `LauncherView`. Keep game selection and transitions in the JavaFX layer.
 - Reuse applicable shared contracts and adapters. Extract more shared code when a second integration needs the same behavior.

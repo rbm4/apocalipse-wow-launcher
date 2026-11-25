@@ -3,10 +3,12 @@ package cloud.apocalipse.launcher;
 import cloud.apocalipse.launcher.games.wow.WowLauncher;
 import cloud.apocalipse.launcher.games.wow.config.LauncherConfig;
 import cloud.apocalipse.launcher.games.wow.config.LauncherDefaults;
+import cloud.apocalipse.launcher.games.zomboid.AgentReleaseCache;
+import cloud.apocalipse.launcher.games.zomboid.ProjectZomboidLauncher;
 import cloud.apocalipse.launcher.infrastructure.diagnostics.StartupLog;
 import cloud.apocalipse.launcher.infrastructure.torrent.JlibtorrentDownloadService;
 import cloud.apocalipse.launcher.infrastructure.web.PersistentCookieStore;
-import cloud.apocalipse.launcher.ui.wow.WowLauncherView;
+import cloud.apocalipse.launcher.ui.LauncherView;
 import javafx.application.Application;
 import javafx.stage.Stage;
 
@@ -24,7 +26,9 @@ public final class LauncherApp extends Application {
         try {
             StartupLog.write("Starting launcher.", null);
             PersistentCookieStore.install(config.appDataDirectory().resolve("website-cookies.properties"));
-            new WowLauncherView(config, wow).show(stage);
+            var appData = config.appDataDirectory();
+            var agentCache = new AgentReleaseCache(appData.resolve("zomboid-agent"));
+            new LauncherView(config, wow, new ProjectZomboidLauncher(appData, agentCache)).show(stage);
         } catch (RuntimeException exc) {
             StartupLog.write("Launcher failed during JavaFX start().", exc);
             throw exc;

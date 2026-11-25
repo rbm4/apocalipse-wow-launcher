@@ -20,6 +20,19 @@
     -fx-text-fill: #d7c7b6;
 }
 
+.window-switch-button {
+    -fx-padding: 5px 12px;
+    -fx-background-color: linear-gradient(to right, #e6521f, #b45a25);
+    -fx-border-color: rgba(255, 217, 128, 0.48);
+    -fx-font-size: 11px;
+    -fx-font-weight: 800;
+    -fx-text-fill: #ffffff;
+}
+
+.window-switch-button:hover {
+    -fx-background-color: linear-gradient(to right, #f0642c, #cb682c);
+}
+
 .window-button {
     -fx-min-width: 34px;
     -fx-pref-width: 34px;
@@ -125,6 +138,57 @@
     -fx-background-color: rgba(8, 11, 16, 0.18);
 }
 
+.launcher-page {
+    -fx-padding: 22px;
+    -fx-spacing: 18px;
+}
+
+.options-form {
+    -fx-hgap: 14px;
+    -fx-vgap: 14px;
+}
+
+.game-cards {
+    -fx-hgap: 14px;
+}
+
+.game-card-content {
+    -fx-spacing: 14px;
+    -fx-pref-height: 304px;
+}
+
+.game-card:hover .game-card-content {
+    -fx-background-color: rgba(28, 22, 27, 0.96);
+    -fx-border-color: rgba(244, 210, 122, 0.62);
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.56), 18, 0.22, 0, 5);
+}
+
+.game-card:focused .game-card-content {
+    -fx-border-color: #f4d27a;
+}
+
+.game-card-artwork {
+    -fx-pref-width: 220px;
+    -fx-pref-height: 278px;
+    -fx-background-repeat: no-repeat;
+    -fx-background-position: center;
+    -fx-background-size: cover;
+}
+
+.wow-artwork {
+    -fx-background-image: url("wow.jpg");
+}
+
+.zomboid-artwork {
+    -fx-background-image: url("pz-card.jpg");
+}
+
+.game-card-title {
+    -fx-font-size: 20px;
+    -fx-font-weight: 800;
+    -fx-text-fill: #ffffff;
+}
+
 .web-view {
     -fx-background-color: #080b10;
 }
@@ -137,6 +201,10 @@
     -fx-padding: 14px 16px;
     -fx-background-color: rgba(12, 10, 12, 0.30);
     -fx-background-radius: 8px;
+}
+
+.hero-copy {
+    -fx-spacing: 8px;
 }
 
 .glass-panel {
@@ -156,6 +224,7 @@
 
 .hero-subtitle {
     -fx-font-size: 14px;
+    -fx-font-weight: normal;
     -fx-text-fill: #f1e5d4;
 }
 
@@ -253,6 +322,12 @@
 
 .button:hover {
     -fx-background-color: rgba(55, 49, 55, 0.96);
+}
+
+.button.game-card {
+    -fx-padding: 0;
+    -fx-background-color: transparent;
+    -fx-border-width: 0;
 }
 
 .button:disabled {
@@ -461,4 +536,47 @@
     -fx-pref-height: 88px;
     -fx-min-height: 88px;
     -fx-max-height: 88px;
+}
+
+.zomboid-options-scroll,
+.zomboid-options-scroll > .viewport {
+    -fx-background-color: transparent;
+}
+
+.zomboid-options-scroll .scroll-bar:vertical {
+    -fx-background-color: #171318;
+}
+
+.zomboid-options-scroll .scroll-bar:vertical .thumb {
+    -fx-background-color: #755641;
+    -fx-background-insets: 2px;
+    -fx-background-radius: 5px;
+}
+
+.zomboid-options-scroll .scroll-bar:vertical .increment-arrow,
+.zomboid-options-scroll .scroll-bar:vertical .decrement-arrow {
+    -fx-background-color: #c7b9aa;
+}
+
+.zomboid-memory-options .text-field {
+    -fx-background-color: #171318;
+    -fx-text-fill: #f1e5d4;
+    -fx-prompt-text-fill: #c7b9aa;
+    -fx-border-color: rgba(244, 210, 122, 0.35);
+    -fx-border-radius: 4px;
+    -fx-background-radius: 4px;
+}
+
+.zomboid-memory-options .text-field:focused {
+    -fx-border-color: #f4d27a;
+}
+
+.zomboid-optimization {
+    -fx-text-fill: #f1e5d4;
+    -fx-cursor: hand;
+}
+
+.zomboid-optimization:disabled {
+    -fx-opacity: 0.68;
+    -fx-cursor: default;
 }

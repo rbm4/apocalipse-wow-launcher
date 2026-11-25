@@ -1,4 +1,4 @@
-package cloud.apocalipse.launcher.games.wow.patch;
+package cloud.apocalipse.launcher.core;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -8,11 +8,11 @@ import java.security.DigestInputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
-final class FileHashes {
+public final class FileHashes {
     private FileHashes() {
     }
 
-    static String sha256(Path path) throws IOException {
+    public static String sha256(Path path) throws IOException {
         MessageDigest digest = sha256Digest();
         byte[] buffer = new byte[1024 * 1024];
         try (InputStream in = Files.newInputStream(path);

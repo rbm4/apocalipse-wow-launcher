@@ -1,6 +1,6 @@
 package cloud.apocalipse.launcher.ui.wow;
 
-enum AppLanguage {
+public enum AppLanguage {
     PORTUGUESE("pt", "Português"),
     ENGLISH("en", "English"),
     SPANISH("es", "Español");
@@ -13,11 +13,11 @@ enum AppLanguage {
         this.displayName = displayName;
     }
 
-    String code() {
+    public String code() {
         return code;
     }
 
-    String text(String key) {
+    public String text(String key) {
         return switch (this) {
             case ENGLISH -> english(key);
             case SPANISH -> spanish(key);
@@ -30,7 +30,7 @@ enum AppLanguage {
         return displayName;
     }
 
-    static AppLanguage fromCode(String code) {
+    public static AppLanguage fromCode(String code) {
         for (AppLanguage language : values()) {
             if (language.code.equalsIgnoreCase(code)) {
                 return language;
@@ -41,11 +41,36 @@ enum AppLanguage {
 
     private static String portuguese(String key) {
         return switch (key) {
-            case "window.title" -> "Apocalipse WoW Launcher";
+            case "window.title" -> "Apocalipse BR Launcher";
+            case "button.chooseGame" -> "Trocar jogo";
+            case "button.switchToZomboid" -> "Project Zomboid";
+            case "button.switchToWow" -> "World of Warcraft";
+            case "selection.title" -> "Escolha seu jogo";
+            case "selection.subtitle" -> "Selecione o launcher que deseja abrir.";
+            case "game.wow.title" -> "World of Warcraft";
+            case "game.wow.description" -> "Atualize seu cliente e entre no reino Apocalipse.";
+            case "game.zomboid.title" -> "Project Zomboid";
+            case "game.zomboid.description" -> "Prepare-se para sobreviver ao apocalipse zumbi.";
+            case "button.zomboidPlay" -> "Jogar";
+            case "server.zomboidStatus" -> "Status do Servidor";
+            case "status.zomboidSelectFolder" -> "Selecione a pasta de instalação do Project Zomboid em Opções.";
+            case "status.zomboidStarting" -> "Iniciando Project Zomboid...";
+            case "status.zomboidRunning" -> "Project Zomboid está aberto";
+            case "status.zomboidExitError" -> "Project Zomboid encerrou com o código {code}.";
+            case "log.zomboidClosed" -> "Project Zomboid foi fechado.";
+            case "game.available" -> "DISPONÍVEL";
+            case "game.inDevelopment" -> "EM DESENVOLVIMENTO";
+            case "game.zomboid.comingSoon" -> "O launcher de Project Zomboid estará disponível em breve.";
+            case "selection.saveFailedTitle" -> "Não foi possível salvar sua escolha";
+            case "selection.saveFailedMessage" -> "Verifique as permissões da pasta de dados e tente novamente.";
             case "tab.home" -> "Apocalipse WoW";
+            case "tab.zomboid.home" -> "Project Zomboid";
             case "tab.options" -> "Opções";
             case "tab.website" -> "Site";
             case "button.chooseFolder" -> "Escolher pasta";
+            case "button.detectZomboidFolder" -> "Detectar pasta (recomendado)";
+            case "options.zomboidDetectionNotFound" -> "Não foi possível localizar o Project Zomboid no Steam. Use Escolher pasta para selecionar a instalação.";
+            case "options.zomboidDetectionFailed" -> "Não foi possível consultar a instalação do Steam. Você pode selecionar a pasta do jogo manualmente.";
             case "button.updatePlay" -> "Atualizar e Jogar";
             case "button.downloadClient" -> "Baixar cliente";
             case "button.cancelDownload" -> "Cancelar download";
@@ -89,6 +114,7 @@ enum AppLanguage {
             case "news.coming.body" -> "A integração de notícias do site alimentará este painel em breve.";
             case "options.title" -> "Opções";
             case "options.description" -> "Configuração usada antes de atualizar e iniciar o cliente.";
+            case "options.zomboidDescription" -> "Selecione a pasta da instalação do Project Zomboid.";
             case "options.gameDirectory" -> "Diretório do jogo";
             case "options.launchProfile" -> "Perfil de execução";
             case "options.language" -> "Idioma";
@@ -100,6 +126,7 @@ enum AppLanguage {
             case "profile.console" -> "Console ativado";
             case "profile.windowedConsole" -> "Janela + console";
             case "dialog.selectWowFolder" -> "Selecionar pasta do World of Warcraft";
+            case "dialog.selectZomboidFolder" -> "Selecionar pasta do Project Zomboid";
             case "dialog.selectClientInstallFolder" -> "Selecionar pasta para instalar o cliente";
             case "log.launchProfileSelected" -> "Perfil de execução selecionado";
             case "log.selectedWowFolder" -> "Pasta do WoW selecionada";
@@ -182,11 +209,36 @@ enum AppLanguage {
 
     private static String english(String key) {
         return switch (key) {
-            case "window.title" -> "Apocalipse WoW Launcher";
+            case "window.title" -> "Apocalipse BR Launcher";
+            case "button.chooseGame" -> "Switch game";
+            case "button.switchToZomboid" -> "Project Zomboid";
+            case "button.switchToWow" -> "World of Warcraft";
+            case "selection.title" -> "Choose your game";
+            case "selection.subtitle" -> "Select the launcher you want to open.";
+            case "game.wow.title" -> "World of Warcraft";
+            case "game.wow.description" -> "Update your client and join the Apocalipse realm.";
+            case "game.zomboid.title" -> "Project Zomboid";
+            case "game.zomboid.description" -> "Get ready to survive the zombie apocalypse.";
+            case "button.zomboidPlay" -> "Play";
+            case "server.zomboidStatus" -> "Server Status";
+            case "status.zomboidSelectFolder" -> "Select the Project Zomboid installation folder in Options.";
+            case "status.zomboidStarting" -> "Starting Project Zomboid...";
+            case "status.zomboidRunning" -> "Project Zomboid is running";
+            case "status.zomboidExitError" -> "Project Zomboid exited with code {code}.";
+            case "log.zomboidClosed" -> "Project Zomboid closed.";
+            case "game.available" -> "AVAILABLE";
+            case "game.inDevelopment" -> "IN DEVELOPMENT";
+            case "game.zomboid.comingSoon" -> "The Project Zomboid launcher will be available soon.";
+            case "selection.saveFailedTitle" -> "Could not save your choice";
+            case "selection.saveFailedMessage" -> "Check the data folder permissions and try again.";
             case "tab.home" -> "Apocalipse WoW";
+            case "tab.zomboid.home" -> "Project Zomboid";
             case "tab.options" -> "Options";
             case "tab.website" -> "Website";
             case "button.chooseFolder" -> "Choose folder";
+            case "button.detectZomboidFolder" -> "Detect folder (recommended)";
+            case "options.zomboidDetectionNotFound" -> "Project Zomboid was not found in Steam. Use Choose folder to select your installation.";
+            case "options.zomboidDetectionFailed" -> "The Steam installation could not be checked. You can select the game folder manually.";
             case "button.updatePlay" -> "Update & Play";
             case "button.downloadClient" -> "Download Client";
             case "button.cancelDownload" -> "Cancel Download";
@@ -230,6 +282,7 @@ enum AppLanguage {
             case "news.coming.body" -> "Website news integration will feed this panel soon.";
             case "options.title" -> "Options";
             case "options.description" -> "Launcher configuration used before patching and starting the client.";
+            case "options.zomboidDescription" -> "Select the folder containing your Project Zomboid installation.";
             case "options.gameDirectory" -> "Game directory";
             case "options.launchProfile" -> "Launch profile";
             case "options.language" -> "Language";
@@ -241,6 +294,7 @@ enum AppLanguage {
             case "profile.console" -> "Console enabled";
             case "profile.windowedConsole" -> "Windowed + console";
             case "dialog.selectWowFolder" -> "Select World of Warcraft Folder";
+            case "dialog.selectZomboidFolder" -> "Select Project Zomboid Folder";
             case "dialog.selectClientInstallFolder" -> "Select Client Install Folder";
             case "log.launchProfileSelected" -> "Launch profile selected";
             case "log.selectedWowFolder" -> "Selected WoW folder";
@@ -323,11 +377,36 @@ enum AppLanguage {
 
     private static String spanish(String key) {
         return switch (key) {
-            case "window.title" -> "Apocalipse WoW Launcher";
+            case "window.title" -> "Apocalipse BR Launcher";
+            case "button.chooseGame" -> "Cambiar juego";
+            case "button.switchToZomboid" -> "Project Zomboid";
+            case "button.switchToWow" -> "World of Warcraft";
+            case "selection.title" -> "Elige tu juego";
+            case "selection.subtitle" -> "Selecciona el launcher que quieres abrir.";
+            case "game.wow.title" -> "World of Warcraft";
+            case "game.wow.description" -> "Actualiza tu cliente y únete al reino Apocalipse.";
+            case "game.zomboid.title" -> "Project Zomboid";
+            case "game.zomboid.description" -> "Prepárate para sobrevivir al apocalipsis zombi.";
+            case "button.zomboidPlay" -> "Jugar";
+            case "server.zomboidStatus" -> "Estado del servidor";
+            case "status.zomboidSelectFolder" -> "Selecciona la carpeta de instalación de Project Zomboid en Opciones.";
+            case "status.zomboidStarting" -> "Iniciando Project Zomboid...";
+            case "status.zomboidRunning" -> "Project Zomboid está en ejecución";
+            case "status.zomboidExitError" -> "Project Zomboid se cerró con el código {code}.";
+            case "log.zomboidClosed" -> "Project Zomboid se cerró.";
+            case "game.available" -> "DISPONIBLE";
+            case "game.inDevelopment" -> "EN DESARROLLO";
+            case "game.zomboid.comingSoon" -> "El launcher de Project Zomboid estará disponible pronto.";
+            case "selection.saveFailedTitle" -> "No se pudo guardar tu elección";
+            case "selection.saveFailedMessage" -> "Comprueba los permisos de la carpeta de datos e inténtalo de nuevo.";
             case "tab.home" -> "Apocalipse WoW";
+            case "tab.zomboid.home" -> "Project Zomboid";
             case "tab.options" -> "Opciones";
             case "tab.website" -> "Sitio";
             case "button.chooseFolder" -> "Elegir carpeta";
+            case "button.detectZomboidFolder" -> "Detectar carpeta (recomendado)";
+            case "options.zomboidDetectionNotFound" -> "No se encontró Project Zomboid en Steam. Usa Elegir carpeta para seleccionar la instalación.";
+            case "options.zomboidDetectionFailed" -> "No se pudo consultar la instalación de Steam. Puedes seleccionar la carpeta del juego manualmente.";
             case "button.updatePlay" -> "Actualizar y Jugar";
             case "button.downloadClient" -> "Descargar cliente";
             case "button.cancelDownload" -> "Cancelar descarga";
@@ -371,6 +450,7 @@ enum AppLanguage {
             case "news.coming.body" -> "La integración de noticias del sitio alimentará este panel pronto.";
             case "options.title" -> "Opciones";
             case "options.description" -> "Configuración usada antes de actualizar e iniciar el cliente.";
+            case "options.zomboidDescription" -> "Selecciona la carpeta de instalación de Project Zomboid.";
             case "options.gameDirectory" -> "Directorio del juego";
             case "options.launchProfile" -> "Perfil de inicio";
             case "options.language" -> "Idioma";
@@ -382,6 +462,7 @@ enum AppLanguage {
             case "profile.console" -> "Consola activada";
             case "profile.windowedConsole" -> "Ventana + consola";
             case "dialog.selectWowFolder" -> "Seleccionar carpeta de World of Warcraft";
+            case "dialog.selectZomboidFolder" -> "Seleccionar carpeta de Project Zomboid";
             case "dialog.selectClientInstallFolder" -> "Seleccionar carpeta para instalar el cliente";
             case "log.launchProfileSelected" -> "Perfil de inicio seleccionado";
             case "log.selectedWowFolder" -> "Carpeta de WoW seleccionada";

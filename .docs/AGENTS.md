@@ -4,6 +4,7 @@
 | --- | --- | --- |
 | Architecture | [Packages and data flow](architecture/overview.md) | JavaFX boundaries, application assembly, and the structure for another game |
 | Game integrations | [World of Warcraft](games/world-of-warcraft.md) | Setup, managed files, patching, launch, and community services |
+| Game integrations | [Project Zomboid](games/project-zomboid.md) | Steam installation detection, launch, server status, and ApocBR optimizations |
 | Build and release | [Windows packaging](build/windows.md) | Maven, jpackage, WiX, local MSI builds, and GitHub releases |
 | Security and transparency | [Inspecting a release](security/inspection.md) | Source review and installer verification |
 
