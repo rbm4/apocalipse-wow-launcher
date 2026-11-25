@@ -42,6 +42,11 @@ public enum AppLanguage {
     private static String portuguese(String key) {
         return switch (key) {
             case "window.title" -> "Apocalipse BR Launcher";
+            case "launcherUpdate.available" -> "Nova versão do launcher";
+            case "launcherUpdate.restart" -> "Atualizar e reiniciar";
+            case "launcherUpdate.busy" -> "Aguarde a operação do jogo terminar para atualizar o launcher.";
+            case "launcherUpdate.failed" -> "Não foi possível instalar a atualização do launcher.";
+            case "launcherUpdate.reboot" -> "Reinicie o Windows para concluir a atualização do launcher.";
             case "button.chooseGame" -> "Trocar jogo";
             case "button.switchToZomboid" -> "Project Zomboid";
             case "button.switchToWow" -> "World of Warcraft";
@@ -211,6 +216,11 @@ public enum AppLanguage {
 
     private static String english(String key) {
         return switch (key) {
+            case "launcherUpdate.available" -> "New launcher version";
+            case "launcherUpdate.restart" -> "Update and restart";
+            case "launcherUpdate.busy" -> "Wait for the game operation to finish before updating the launcher.";
+            case "launcherUpdate.failed" -> "The launcher update could not be installed.";
+            case "launcherUpdate.reboot" -> "Restart Windows to finish updating the launcher.";
             case "window.title" -> "Apocalipse BR Launcher";
             case "button.chooseGame" -> "Switch game";
             case "button.switchToZomboid" -> "Project Zomboid";
@@ -381,6 +391,11 @@ public enum AppLanguage {
 
     private static String spanish(String key) {
         return switch (key) {
+            case "launcherUpdate.available" -> "Nueva versión del launcher";
+            case "launcherUpdate.restart" -> "Actualizar y reiniciar";
+            case "launcherUpdate.busy" -> "Espera a que termine la operación del juego para actualizar el launcher.";
+            case "launcherUpdate.failed" -> "No se pudo instalar la actualización del launcher.";
+            case "launcherUpdate.reboot" -> "Reinicia Windows para completar la actualización del launcher.";
             case "window.title" -> "Apocalipse BR Launcher";
             case "button.chooseGame" -> "Cambiar juego";
             case "button.switchToZomboid" -> "Project Zomboid";

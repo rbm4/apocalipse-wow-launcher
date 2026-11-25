@@ -8,10 +8,14 @@ import cloud.apocalipse.launcher.games.zomboid.ProjectZomboidLauncher;
 import cloud.apocalipse.launcher.games.zomboid.SteamInstallationDetector;
 import cloud.apocalipse.launcher.games.zomboid.config.ProjectZomboidConfig;
 import cloud.apocalipse.launcher.infrastructure.diagnostics.StartupLog;
+import cloud.apocalipse.launcher.infrastructure.update.LauncherReleases;
+import cloud.apocalipse.launcher.infrastructure.update.WindowsLauncherInstaller;
 import cloud.apocalipse.launcher.ui.shell.WindowTitleBar;
 import cloud.apocalipse.launcher.ui.wow.AppLanguage;
 import cloud.apocalipse.launcher.ui.wow.WowLauncherView;
 import cloud.apocalipse.launcher.ui.zomboid.ProjectZomboidLauncherView;
+import javafx.application.Platform;
+import javafx.concurrent.Task;
 import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.control.Alert;
@@ -21,6 +25,8 @@ import javafx.stage.Stage;
 import javafx.stage.StageStyle;
 
 import java.io.IOException;
+import java.nio.file.Path;
+import java.util.function.Consumer;
 
 public final class LauncherView {
     private final LauncherConfig config;
@@ -28,18 +34,27 @@ public final class LauncherView {
     private final LauncherPreferences preferences;
     private final ProjectZomboidConfig zomboidConfig;
     private final ProjectZomboidLauncher zomboid;
+    private final LauncherReleases releases;
+    private final Consumer<String> openInBrowser;
 
     private Stage stage;
     private BorderPane root;
     private WindowTitleBar titleBar;
     private Node wowContent;
     private Node zomboidContent;
+    private WowLauncherView wowView;
+    private ProjectZomboidLauncherView zomboidView;
+    private String updateLabel;
+    private Runnable updateAction;
     private LauncherGame activeGame;
 
-    public LauncherView(LauncherConfig config, WowLauncher wow, ProjectZomboidLauncher zomboid) {
+    public LauncherView(LauncherConfig config, WowLauncher wow, ProjectZomboidLauncher zomboid,
+                        LauncherReleases releases, Consumer<String> openInBrowser) {
         this.config = config;
         this.wow = wow;
         this.zomboid = zomboid;
+        this.releases = releases;
+        this.openInBrowser = openInBrowser;
         preferences = new LauncherPreferences(config.appDataDirectory());
         zomboidConfig = new ProjectZomboidConfig(config.appDataDirectory());
     }
@@ -66,9 +81,85 @@ public final class LauncherView {
             stage.toFront();
             stage.requestFocus();
         });
+        stage.setOnCloseRequest(event -> {
+            if (root.isDisable()) {
+                event.consume();
+            }
+        });
 
         preferences.selectedGame().ifPresentOrElse(this::showGame, this::showGameSelection);
         stage.show();
+        checkForLauncherUpdate();
+    }
+
+    private void checkForLauncherUpdate() {
+        if (!System.getProperty("os.name").startsWith("Windows")) {
+            return;
+        }
+        Thread.ofVirtual().name("launcher-update-check").start(() -> {
+            try {
+                var available = releases.check(getClass().getPackage().getImplementationVersion());
+                if (available.isEmpty()) {
+                    return;
+                }
+                var update = available.get();
+                Platform.runLater(() -> showLauncherUpdate("launcherUpdate.available",
+                        () -> openInBrowser.accept(update.page().toString())));
+                var installer = WindowsLauncherInstaller.current();
+                if (installer.isPresent()) {
+                    Path msi = releases.download(update);
+                    Platform.runLater(() -> showLauncherUpdate("launcherUpdate.restart",
+                            () -> installLauncherUpdate(installer.get(), update, msi)));
+                }
+            } catch (IOException | RuntimeException ex) {
+                StartupLog.write("Launcher update check or download failed.", ex);
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+            }
+        });
+    }
+
+    private void showLauncherUpdate(String label, Runnable action) {
+        updateLabel = label;
+        updateAction = action;
+        titleBar.showUpdate(currentLanguage().text(label), action);
+    }
+
+    private void installLauncherUpdate(WindowsLauncherInstaller installer, LauncherReleases.Update update, Path msi) {
+        var language = currentLanguage();
+        if ((wowView != null && wowView.isUpdateBlocked()) || (zomboidView != null && zomboidView.isUpdateBlocked())) {
+            showUpdateMessage(Alert.AlertType.INFORMATION, language.text("launcherUpdate.busy"));
+            return;
+        }
+        root.setDisable(true);
+        Task<Void> preparation = new Task<>() {
+            @Override
+            protected Void call() throws IOException, InterruptedException {
+                installer.prepare(msi, update, language.text("launcherUpdate.failed"), language.text("launcherUpdate.reboot"));
+                return null;
+            }
+        };
+        preparation.setOnSucceeded(event -> Platform.exit());
+        preparation.setOnFailed(event -> {
+            StartupLog.write("Launcher installer did not start.", preparation.getException());
+            root.setDisable(false);
+            var manual = new javafx.scene.control.ButtonType(language.text("launcherUpdate.available"));
+            var alert = new Alert(Alert.AlertType.ERROR, language.text("launcherUpdate.failed"),
+                    manual, javafx.scene.control.ButtonType.CLOSE);
+            alert.initOwner(stage);
+            alert.setHeaderText(null);
+            if (alert.showAndWait().filter(manual::equals).isPresent()) {
+                openInBrowser.accept(update.page().toString());
+            }
+        });
+        Thread.ofVirtual().name("launcher-update-prepare").start(preparation);
+    }
+
+    private void showUpdateMessage(Alert.AlertType type, String message) {
+        var alert = new Alert(type, message);
+        alert.initOwner(stage);
+        alert.setHeaderText(null);
+        alert.showAndWait();
     }
 
     private void showGameSelection() {
@@ -104,15 +195,16 @@ public final class LauncherView {
         switch (game) {
             case WORLD_OF_WARCRAFT -> {
                 if (wowContent == null) {
-                    wowContent = new WowLauncherView(config, wow, this::refreshNavigationTexts).createContent(stage);
+                    wowView = new WowLauncherView(config, wow, this::refreshNavigationTexts);
+                    wowContent = wowView.createContent(stage);
                 }
                 root.setCenter(wowContent);
             }
             case PROJECT_ZOMBOID -> {
                 if (zomboidContent == null) {
-                    zomboidContent = new ProjectZomboidLauncherView(
-                            currentLanguage(), zomboidConfig, new SteamInstallationDetector(), zomboid)
-                            .createContent(stage);
+                    zomboidView = new ProjectZomboidLauncherView(
+                            currentLanguage(), zomboidConfig, new SteamInstallationDetector(), zomboid, openInBrowser);
+                    zomboidContent = zomboidView.createContent(stage);
                 }
                 root.setCenter(zomboidContent);
             }
@@ -122,6 +214,9 @@ public final class LauncherView {
     private void refreshNavigationTexts() {
         titleBar.setActionText(chooseGameLabel());
         titleBar.setOtherGameText(otherGameLabel());
+        if (updateAction != null) {
+            titleBar.showUpdate(currentLanguage().text(updateLabel), updateAction);
+        }
     }
 
     private void switchToOtherGame() {

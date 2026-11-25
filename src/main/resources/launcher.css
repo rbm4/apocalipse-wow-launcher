@@ -599,3 +599,19 @@
     -fx-opacity: 0.68;
     -fx-cursor: default;
 }
+
+.zomboid-optimization-info {
+    -fx-min-width: 20px;
+    -fx-min-height: 20px;
+    -fx-alignment: center;
+    -fx-font-weight: bold;
+    -fx-border-color: rgba(244, 210, 122, 0.55);
+    -fx-border-radius: 999px;
+    -fx-background-radius: 999px;
+}
+
+.zomboid-optimization-info:hover,
+.zomboid-optimization-info:focused {
+    -fx-background-color: rgba(244, 210, 122, 0.18);
+    -fx-border-color: #f4d27a;
+}

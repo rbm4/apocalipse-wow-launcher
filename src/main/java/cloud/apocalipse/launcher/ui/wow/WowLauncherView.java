@@ -106,6 +106,10 @@ public final class WowLauncherView {
     private boolean gameRunning;
     private boolean clientInstallInProgress;
 
+    public boolean isUpdateBlocked() {
+        return working || clientInstallInProgress;
+    }
+
     public WowLauncherView(LauncherConfig config, WowLauncher wow) {
         this(config, wow, () -> {
         });

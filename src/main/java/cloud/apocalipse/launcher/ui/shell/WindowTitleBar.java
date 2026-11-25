@@ -24,6 +24,7 @@ public final class WindowTitleBar extends HBox {
     private boolean manuallyMaximized;
     private final Button gameSwitchButton;
     private final Button otherGameButton;
+    private final Button updateButton;
 
     public WindowTitleBar(Stage stage, String title, String actionText, Runnable onAction,
                           String otherGameText, Runnable onOtherGame) {
@@ -39,6 +40,10 @@ public final class WindowTitleBar extends HBox {
         otherGameButton = new Button(otherGameText);
         otherGameButton.getStyleClass().add("window-switch-button");
         otherGameButton.setOnAction(event -> onOtherGame.run());
+        updateButton = new Button();
+        updateButton.getStyleClass().add("window-switch-button");
+        updateButton.setVisible(false);
+        updateButton.setManaged(false);
         Button minimize = windowButton(minimizeIcon());
         minimize.setOnAction(event -> stage.setIconified(true));
         Button maximize = windowButton(maximizeIcon());
@@ -47,7 +52,7 @@ public final class WindowTitleBar extends HBox {
         close.getStyleClass().add("close-button");
         close.setOnAction(event -> stage.close());
 
-        getChildren().addAll(windowTitleLabel, spacer, gameSwitchButton, otherGameButton, minimize, maximize, close);
+        getChildren().addAll(windowTitleLabel, spacer, updateButton, gameSwitchButton, otherGameButton, minimize, maximize, close);
         setAlignment(Pos.CENTER_LEFT);
         getStyleClass().add("title-bar");
         setOnMousePressed(event -> {
@@ -87,6 +92,13 @@ public final class WindowTitleBar extends HBox {
     public void setOtherGameVisible(boolean visible) {
         otherGameButton.setVisible(visible);
         otherGameButton.setManaged(visible);
+    }
+
+    public void showUpdate(String text, Runnable action) {
+        updateButton.setText(text);
+        updateButton.setOnAction(event -> action.run());
+        updateButton.setManaged(true);
+        updateButton.setVisible(true);
     }
 
     private void toggleMaximize(Stage stage) {

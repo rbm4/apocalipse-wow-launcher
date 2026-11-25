@@ -2,6 +2,8 @@
 param(
     [switch]$Release,
     [string]$Version,
+    [string]$SigningCertificateThumbprint,
+    [string]$TimestampUrl = "http://timestamp.digicert.com",
     [switch]$SkipDependencyInstall
 )
 
@@ -41,8 +43,9 @@ function Assert-ProjectVersion {
     if ($Value.Trim().StartsWith("-")) {
         throw "$Source '$Value' looks like a command-line option. Use -Version 1.2.3 for a release version."
     }
-    if ($Value.Trim() -notmatch '^[0-9]+(\.[0-9]+){1,3}([-.][A-Za-z0-9][A-Za-z0-9.-]*)?$') {
-        throw "$Source '$Value' is not a valid jpackage/Maven release version. Use values like 0.1.6 or 1.0.0."
+    if ($Value -notmatch '^(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,4})$' -or
+            [int]$Matches[1] -gt 255 -or [int]$Matches[2] -gt 255 -or [int]$Matches[3] -gt 65535) {
+        throw "$Source '$Value' must use three Windows Installer version fields. Use values like 0.1.8 or 1.0.0."
     }
 }
 
@@ -319,22 +322,27 @@ function Publish-Release {
     }
 
     if ((Invoke-NativeQuiet "gh" @("release", "view", $TagName)) -eq 0) {
-        if (-not (Prompt-YesNo "Release $TagName already exists. Upload MSI to it with --clobber?")) {
-            throw "Release upload cancelled."
+        $existingRelease = & gh release view $TagName --json isDraft | ConvertFrom-Json
+        if ($LASTEXITCODE -ne 0 -or -not $existingRelease.isDraft) {
+            throw "Release $TagName is already published. Build with a new version."
         }
         & gh release upload $TagName $MsiPath --clobber
         if ($LASTEXITCODE -ne 0) {
             throw "gh release upload failed."
         }
-        return
+    } else {
+        & gh release create $TagName $MsiPath `
+            --verify-tag --draft `
+            --title "Apocalipse WoW Launcher $ProjectVersion" `
+            --notes "Windows MSI installer for Apocalipse WoW Launcher $ProjectVersion."
+        if ($LASTEXITCODE -ne 0) {
+            throw "gh release create failed."
+        }
     }
 
-    & gh release create $TagName $MsiPath `
-        --title "Apocalipse WoW Launcher $ProjectVersion" `
-        --notes "Windows MSI installer for Apocalipse WoW Launcher $ProjectVersion." `
-        --latest
+    & gh release edit $TagName --draft=false --latest
     if ($LASTEXITCODE -ne 0) {
-        throw "gh release create failed."
+        throw "gh release edit failed. The release can be resumed from its draft."
     }
 }
 
@@ -381,13 +389,33 @@ New-WindowsIcon `
     -SourcePath "src\main\resources\Apocalipse_wow_icon.png" `
     -DestinationPath $iconPath
 $resolvedIconPath = (Resolve-Path -LiteralPath $iconPath).Path
+$signingCertificate = $null
+$mavenOptions = @("--batch-mode", "--no-transfer-progress", "-Pjpackage-msi", "-Djpackage.icon=$resolvedIconPath")
+if ($SigningCertificateThumbprint) {
+    $SigningCertificateThumbprint = $SigningCertificateThumbprint -replace '\s', ''
+    if ($SigningCertificateThumbprint -notmatch '^[0-9a-fA-F]{40}$') {
+        throw "SigningCertificateThumbprint must be the Windows certificate store's 40-character thumbprint."
+    }
+    Get-Command signtool.exe -ErrorAction Stop | Out-Null
+    $signingCertificate = Get-Item -LiteralPath "Cert:\CurrentUser\My\$SigningCertificateThumbprint"
+    if (-not $signingCertificate.HasPrivateKey) {
+        throw "The signing certificate needs an accessible private key."
+    }
+    $sha256 = [Security.Cryptography.SHA256]::Create()
+    try {
+        $publisherSha256 = [BitConverter]::ToString($sha256.ComputeHash($signingCertificate.RawData)).Replace("-", "")
+    } finally {
+        $sha256.Dispose()
+    }
+    $mavenOptions += "-Dlauncher.updatePublisherSha256=$publisherSha256"
+}
 
 try {
     $buildStartedAt = Get-Date
     Invoke-LoggedCommand `
         -LogPath $buildLog `
         -FilePath "mvn" `
-        -Arguments @("--batch-mode", "--no-transfer-progress", "clean", "verify", "-Pjpackage-msi", "-Djpackage.icon=$resolvedIconPath")
+        -Arguments ($mavenOptions + @("clean", "verify"))
 } catch {
     $buildLogText = Get-Content -LiteralPath $buildLog -Raw -ErrorAction SilentlyContinue
     if ($buildLogText -notlike "*The configured main jar does not exist*") {
@@ -399,7 +427,7 @@ try {
     Invoke-LoggedCommand `
         -LogPath $buildLog `
         -FilePath "mvn" `
-        -Arguments @("--batch-mode", "--no-transfer-progress", "verify", "-Pjpackage-msi", "-Djpackage.icon=$resolvedIconPath")
+        -Arguments ($mavenOptions + @("verify"))
 }
 
 $msi = Get-ChildItem -Path "target\jpackage" -Filter "*.msi" -File -Recurse -ErrorAction SilentlyContinue |
@@ -413,6 +441,16 @@ if (-not $msi) {
 
 $releaseMsi = Join-Path ".local-release\msi" $msi.Name
 Copy-Item -LiteralPath $msi.FullName -Destination $releaseMsi -Force
+if ($signingCertificate) {
+    & signtool.exe sign /sha1 $SigningCertificateThumbprint /fd SHA256 /tr $TimestampUrl /td SHA256 $releaseMsi
+    if ($LASTEXITCODE -ne 0) {
+        throw "SignTool could not sign the MSI."
+    }
+    $signature = Get-AuthenticodeSignature -LiteralPath $releaseMsi
+    if ($signature.Status -ne "Valid" -or $signature.SignerCertificate.Thumbprint -ne $SigningCertificateThumbprint) {
+        throw "Windows could not verify the MSI signature for the requested publisher."
+    }
+}
 Write-Host "MSI copied to: $releaseMsi"
 Write-Host "Build log: $buildLog"
 Write-Host "The installer is configured to create a desktop shortcut at: $([Environment]::GetFolderPath('CommonDesktopDirectory'))\ApocalipseWoW.lnk"

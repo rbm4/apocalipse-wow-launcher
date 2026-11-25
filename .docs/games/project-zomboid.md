@@ -22,9 +22,11 @@ The status WebView uses a stylesheet to display the bundled Zomboid PNG in the w
 
 ## ApocBR optimizations
 
-**Opções → Otimizações ApocBR** highlights the most effective client optimizations before grouping the other switches by engine subsystem. Hover over a checkbox to see which engine behavior it changes. The launcher saves client selections in `project-zomboid.properties`. Dedicated server switches are shown for reference.
+**Opções → Otimizações ApocBR** highlights the most effective client optimizations before grouping the other switches by engine subsystem. Hover over a checkbox to see which engine behavior it changes. Select the **i** beside an option to open its guide or section in the default browser on GitHub. The links also work for the dedicated server switches shown for reference. The launcher saves client selections in `project-zomboid.properties`. Link targets are maintained in `ZomboidOptimization`; building reconciliation links to the published algorithm section while the standalone agent guide is awaiting publication.
 
 Under **Otimizações de maior impacto**, **Reduzir a área carregada do mapa** is off by default and takes effect the next time the game starts. It passes `-Dapocbr.optimization.clientChunkMap.enabled=true` to a compatible agent. At 1920×1080 and above, the cap reduces the client's map window from 19×19 to 13×13 chunks (361 to 169 slots per player, about 53% fewer). Smaller windows keep their original size. The cap reduces the amount of world data the client can keep loaded and can shrink visible map coverage when zoomed out.
+
+**Reconciliação de construções** is also off by default and can be enabled independently of the chunk-map cap. It passes `-Dapocbr.optimization.clientBuildingReconciliation.enabled=true` to a compatible agent on the next launch. The agent reduces work when updating buildings and rooms after map regions change by tracking visited regions and chunks that need refreshing more efficiently.
 
 When at least one client optimization is on, **Jogar** requests the latest stable release from [ApocBR Zomboid Patches](https://github.com/rbm4/apocalipsebr-zomboid-patches/releases/latest). The release must include the shaded `apocbr-agent.jar` asset with GitHub's SHA-256 digest. The launcher hashes the cached JAR and downloads the asset only if the verified copy is missing or corrupt. It checks the downloaded size, checksum, and agent entry point before storing the file under `zomboid-agent` in the launcher data directory. A failed check opens the launch log with the error.
 

@@ -20,6 +20,8 @@
         <jpackage.description>Apocalipse WoW Launcher. The installer creates a desktop shortcut.</jpackage.description>
         <jpackage.icon>${project.basedir}/src/main/resources/Apocalipse_wow_icon.png</jpackage.icon>
         <jpackage.resourceDir>${project.basedir}/src/jpackage/resources</jpackage.resourceDir>
+        <jpackage.upgradeUuid>FE8A577B-C3F4-34D6-9126-F9F345F6CC45</jpackage.upgradeUuid>
+        <launcher.updatePublisherSha256></launcher.updatePublisherSha256>
     </properties>
 
     <repositories>
@@ -55,6 +57,12 @@
             <artifactId>jlibtorrent-windows</artifactId>
             <version>${jlibtorrent.version}</version>
         </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>5.13.4</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -80,7 +88,11 @@
                     <archive>
                         <manifest>
                             <mainClass>${launcher.mainClass}</mainClass>
+                            <addDefaultImplementationEntries>true</addDefaultImplementationEntries>
                         </manifest>
+                        <manifestEntries>
+                            <Launcher-Update-Publisher-Sha256>${launcher.updatePublisherSha256}</Launcher-Update-Publisher-Sha256>
+                        </manifestEntries>
                     </archive>
                 </configuration>
             </plugin>
@@ -187,6 +199,7 @@
                                         <argument>--icon</argument><argument>${jpackage.icon}</argument>
                                         <argument>--resource-dir</argument><argument>${jpackage.resourceDir}</argument>
                                         <argument>--app-version</argument><argument>${project.version}</argument>
+                                        <argument>--win-upgrade-uuid</argument><argument>${jpackage.upgradeUuid}</argument>
                                         <argument>--main-jar</argument><argument>${project.build.finalName}.jar</argument>
                                         <argument>--main-class</argument><argument>${launcher.mainClass}</argument>
                                         <argument>--win-menu</argument>
@@ -228,6 +241,7 @@
                                         <argument>--icon</argument><argument>${jpackage.icon}</argument>
                                         <argument>--resource-dir</argument><argument>${jpackage.resourceDir}</argument>
                                         <argument>--app-version</argument><argument>${project.version}</argument>
+                                        <argument>--win-upgrade-uuid</argument><argument>${jpackage.upgradeUuid}</argument>
                                         <argument>--main-jar</argument><argument>${project.build.finalName}.jar</argument>
                                         <argument>--main-class</argument><argument>${launcher.mainClass}</argument>
                                         <argument>--win-menu</argument>
@@ -235,6 +249,7 @@
                                         <argument>--win-shortcut</argument>
                                         <argument>--win-shortcut-prompt</argument>
                                         <argument>--java-options</argument><argument>-Dfile.encoding=UTF-8</argument>
+                                        <argument>--java-options</argument><argument>-Dapocalipse.launcher.msi=true</argument>
                                         <argument>--verbose</argument>
                                     </arguments>
                                 </configuration>

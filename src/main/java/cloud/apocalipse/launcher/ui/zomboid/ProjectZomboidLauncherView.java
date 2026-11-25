@@ -51,6 +51,7 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.ResourceBundle;
 import java.util.Set;
+import java.util.function.Consumer;
 
 public final class ProjectZomboidLauncherView {
     private static final String WEBSITE_URL = "https://plataforma.apocalipse.cloud/";
@@ -62,6 +63,7 @@ public final class ProjectZomboidLauncherView {
     private final ProjectZomboidConfig config;
     private final SteamInstallationDetector installationDetector;
     private final ProjectZomboidLauncher launcher;
+    private final Consumer<String> openInBrowser;
 
     private Label gameDirectoryLabel;
     private ZomboidMemoryOptions memoryOptions;
@@ -70,16 +72,22 @@ public final class ProjectZomboidLauncherView {
     private TextArea logArea;
     private Hyperlink detailsLink;
     private boolean launchingOrPlaying;
+    private boolean startingGame;
+
+    public boolean isUpdateBlocked() {
+        return startingGame || savingMemorySettings();
+    }
     private TabPane tabs;
 
     public ProjectZomboidLauncherView(AppLanguage language, ProjectZomboidConfig config,
                                     SteamInstallationDetector installationDetector,
-                                    ProjectZomboidLauncher launcher) {
+                                    ProjectZomboidLauncher launcher, Consumer<String> openInBrowser) {
         this.language = language;
         this.agentMessages = ResourceBundle.getBundle("zomboid-agent", Locale.forLanguageTag(language.code()));
         this.config = config;
         this.installationDetector = installationDetector;
         this.launcher = launcher;
+        this.openInBrowser = openInBrowser;
     }
 
     public Node createContent(Stage stage) {
@@ -220,6 +228,7 @@ public final class ProjectZomboidLauncherView {
         Path directory = installation.get();
         Set<ZomboidOptimization> optimizations = config.optimizations();
         launchingOrPlaying = true;
+        startingGame = true;
         playButton.setDisable(true);
         launchStatus.setText(language.text("status.zomboidStarting"));
         log(language.text("status.zomboidStarting") + " " + directory);
@@ -232,6 +241,7 @@ public final class ProjectZomboidLauncherView {
             }
         };
         launch.setOnSucceeded(event -> {
+            startingGame = false;
             playButton.setText(language.text("button.playing"));
             launchStatus.setText(language.text("status.zomboidRunning"));
             log(launchStatus.getText());
@@ -241,6 +251,7 @@ public final class ProjectZomboidLauncherView {
                     Platform.runLater(() -> gameExited(process.exitValue())));
         });
         launch.setOnFailed(event -> {
+            startingGame = false;
             launchingOrPlaying = false;
             refreshLaunchAvailability();
             Throwable failure = launch.getException();
@@ -359,7 +370,7 @@ public final class ProjectZomboidLauncherView {
         int index = 0;
         for (ZomboidOptimization optimization : ZomboidOptimization.values()) {
             if (optimization.group() == group) {
-                options.add(optimizationCheckbox(stage, optimization, selected.contains(optimization)),
+                options.add(optimizationRow(stage, optimization, selected.contains(optimization)),
                         index % columns, index / columns);
                 index++;
             }
@@ -376,13 +387,14 @@ public final class ProjectZomboidLauncherView {
         return panel;
     }
 
-    private Node optimizationCheckbox(Stage stage, ZomboidOptimization optimization, boolean selected) {
+    private Node optimizationRow(Stage stage, ZomboidOptimization optimization, boolean selected) {
         String key = optimization.name();
         CheckBox checkbox = new CheckBox(agentMessages.getString(key + ".label"));
         checkbox.getStyleClass().add("zomboid-optimization");
         checkbox.setSelected(selected);
         checkbox.setDisable(!optimization.availableOnClient());
         checkbox.setWrapText(true);
+        checkbox.setMinWidth(0);
         checkbox.setOnAction(event -> {
             try {
                 config.saveOptimization(optimization, checkbox.isSelected());
@@ -404,7 +416,17 @@ public final class ProjectZomboidLauncherView {
             checkbox.setMouseTransparent(true);
             Tooltip.install(item, tooltip);
         }
-        return item;
+
+        String linkDescription = agentMessages.getString("options.documentation").formatted(checkbox.getText());
+        Hyperlink documentation = new Hyperlink("i");
+        documentation.getStyleClass().add("zomboid-optimization-info");
+        documentation.setAccessibleText(linkDescription);
+        documentation.setTooltip(new Tooltip(linkDescription));
+        documentation.setOnAction(event -> openInBrowser.accept(optimization.documentationUrl()));
+
+        HBox row = new HBox(8, item, documentation);
+        row.setAlignment(Pos.CENTER_LEFT);
+        return row;
     }
 
     private GridPane twoColumnGrid() {
