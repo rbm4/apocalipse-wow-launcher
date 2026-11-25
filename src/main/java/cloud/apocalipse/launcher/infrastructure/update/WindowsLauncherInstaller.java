@@ -28,7 +28,7 @@ public final class WindowsLauncherInstaller {
             return Optional.empty();
         }
         var executable = ProcessHandle.current().info().command().map(Path::of);
-        if (executable.isEmpty() || !"ApocalipseWoW.exe".equalsIgnoreCase(executable.get().getFileName().toString())) {
+        if (executable.isEmpty()) {
             return Optional.empty();
         }
         if (!(LauncherMain.class.getResource("LauncherMain.class").openConnection() instanceof JarURLConnection jar)) {

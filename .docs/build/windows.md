@@ -22,7 +22,7 @@ mvn clean verify -Pjpackage-exe "-Djpackage.icon=$icon"
 mvn clean verify -Pjpackage-msi "-Djpackage.icon=$icon"
 ```
 
-The native packaging step runs at `verify` and writes under `target/jpackage`. The local MSI script generates the ICO at the example path from the bundled PNG and supplies it to Maven.
+The native packaging step runs at `verify` and writes under `target/jpackage` using the POM's `jpackage.appName` as the MSI filename prefix. The local MSI script reads that property to locate the generated MSI, then normalizes the published asset to `ApocalipseWoW-<version>.msi`, which is the stable name the in-app updater checks. The script generates the ICO at the example path from the bundled PNG and supplies it to Maven.
 
 The MSI is linked with the Brazilian Portuguese WiX UI culture. JDK 25 requires the localization override to be named `MsiInstallerStrings_en.wxl`; its `Culture="pt-BR"` attribute selects PT-BR labels, including standard WiX dialogs. Keep all 13 jpackage string IDs in that file. The localization validator runs in the local MSI script and GitHub release workflow and blocks packaging if the file is missing, incomplete, or another culture file would cause duplicate WiX IDs.
 

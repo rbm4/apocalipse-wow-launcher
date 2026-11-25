@@ -62,7 +62,16 @@ try {
     if (-not $parent.WaitForExit(30000)) {
         throw 'The launcher did not close in time.'
     }
-    if (Get-Process -Name 'ApocalipseWoW', 'ApocalipseWoWDebug' -ErrorAction SilentlyContinue) {
+    $processNames = @(
+        [IO.Path]::GetFileNameWithoutExtension($env:APOC_UPDATE_EXE),
+        "$([IO.Path]::GetFileNameWithoutExtension($env:APOC_UPDATE_EXE))Debug",
+        $properties.ProductName,
+        "$($properties.ProductName)Debug"
+    ) | Select-Object -Unique
+    $otherLauncher = Get-Process -ErrorAction SilentlyContinue | Where-Object {
+        $processNames -icontains $_.ProcessName
+    }
+    if ($otherLauncher) {
         throw 'Another launcher instance is still open.'
     }
     $msiexec = Join-Path ([Environment]::SystemDirectory) 'msiexec.exe'
@@ -79,7 +88,12 @@ try {
     $package.Dispose()
     $package = $null
     Remove-Item -LiteralPath $msi -ErrorAction SilentlyContinue
-    Start-Process -FilePath $env:APOC_UPDATE_EXE -WorkingDirectory (Split-Path -Parent $env:APOC_UPDATE_EXE)
+    $installDirectory = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) $properties.ProductName
+    $installedExecutable = Join-Path $installDirectory ($properties.ProductName + '.exe')
+    if (-not (Test-Path -LiteralPath $installedExecutable -PathType Leaf)) {
+        throw "Updated launcher executable was not found: $installedExecutable"
+    }
+    Start-Process -FilePath $installedExecutable -WorkingDirectory $installDirectory
 } catch {
     Write-Output $_.Exception.Message
     if ($ready) {

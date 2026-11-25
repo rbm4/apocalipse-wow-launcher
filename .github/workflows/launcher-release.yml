@@ -62,6 +62,7 @@ jobs:
           Write-Host "Building launcher-v$version from $env:GITHUB_SHA"
 
       - name: Build and test MSI
+        id: build_msi
         env:
           LAUNCHER_VERSION: ${{ steps.version.outputs.version }}
           SIGNING_PFX_BASE64: ${{ secrets.WINDOWS_SIGNING_PFX_BASE64 }}
@@ -102,14 +103,18 @@ jobs:
               Remove-Item -LiteralPath "Cert:\CurrentUser\My\$($certificate.Thumbprint)" -ErrorAction SilentlyContinue
             }
           }
+          $assetName = "ApocalipseWoW-$env:LAUNCHER_VERSION.msi"
+          $msiPath = (Get-Item -LiteralPath (Join-Path '.local-release\msi' $assetName)).FullName
+          "msi_path=$msiPath" >> $env:GITHUB_OUTPUT
 
       - name: Publish MSI as GitHub Latest
         env:
           GH_TOKEN: ${{ github.token }}
           LAUNCHER_VERSION: ${{ steps.version.outputs.version }}
+          MSI_PATH: ${{ steps.build_msi.outputs.msi_path }}
         run: |
           $tag = "launcher-v$env:LAUNCHER_VERSION"
-          $msi = (Get-Item -LiteralPath ".local-release/msi/ApocalipseWoW-$env:LAUNCHER_VERSION.msi").FullName
+          $msi = (Get-Item -LiteralPath $env:MSI_PATH).FullName
           gh api "repos/$env:GITHUB_REPOSITORY/git/refs" --method POST -f "ref=refs/tags/$tag" -f "sha=$env:GITHUB_SHA" | Out-Null
           if ($LASTEXITCODE -ne 0) { throw "Could not reserve $tag for $env:GITHUB_SHA." }
           gh release create $tag $msi --repo $env:GITHUB_REPOSITORY --verify-tag --draft --generate-notes --title "Apocalipse WoW Launcher $env:LAUNCHER_VERSION"

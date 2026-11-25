@@ -34,6 +34,17 @@ function Get-ProjectVersion {
     return $pom.SelectSingleNode("/m:project/m:properties/m:revision", $ns).InnerText
 }
 
+function Get-JpackageAppName {
+    [xml]$pom = Get-Content -LiteralPath "pom.xml" -Raw
+    $ns = New-Object System.Xml.XmlNamespaceManager($pom.NameTable)
+    $ns.AddNamespace("m", "http://maven.apache.org/POM/4.0.0")
+    $appName = $pom.SelectSingleNode("/m:project/m:properties/m:jpackage.appName", $ns)
+    if (-not $appName -or [string]::IsNullOrWhiteSpace($appName.InnerText)) {
+        throw "The jpackage.appName property is missing from pom.xml."
+    }
+    return $appName.InnerText.Trim()
+}
+
 function Assert-ProjectVersion {
     param(
         [string]$Value,
@@ -387,6 +398,7 @@ if ($Version -and -not $BuildOnly) {
 
 $projectVersion = if ($BuildOnly -and $Version) { $Version.Trim() } else { Get-ProjectVersion }
 Assert-ProjectVersion -Value $projectVersion -Source "Project version"
+$jpackageAppName = Get-JpackageAppName
 $buildLog = Join-Path ".local-release\logs" "msi-build-$projectVersion.log"
 $iconPath = Join-Path $scriptRoot ".local-release\resources\ApocalipseWoW.ico"
 New-WindowsIcon `
@@ -434,16 +446,21 @@ try {
         -Arguments ($mavenOptions + @("verify"))
 }
 
-$msi = Get-ChildItem -Path "target\jpackage" -Filter "ApocalipseWoW-$projectVersion.msi" -File -ErrorAction SilentlyContinue |
-    Where-Object { $_.LastWriteTime -ge $buildStartedAt } |
+$jpackageMsiName = "$jpackageAppName-$projectVersion.msi"
+$msi = Get-ChildItem -Path "target\jpackage" -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -ceq $jpackageMsiName -and $_.LastWriteTime -ge $buildStartedAt } |
     Sort-Object -Property LastWriteTime -Descending |
     Select-Object -First 1
 
 if (-not $msi) {
-    throw "No MSI was produced under target\jpackage. See $buildLog"
+    $producedMsis = @(Get-ChildItem -Path "target\jpackage" -Filter "*.msi" -File -ErrorAction SilentlyContinue |
+        Select-Object -ExpandProperty Name)
+    $found = if ($producedMsis.Count -gt 0) { $producedMsis -join ", " } else { "none" }
+    throw "Expected '$jpackageMsiName' under target\jpackage, but found: $found. See $buildLog"
 }
 
-$releaseMsi = Join-Path ".local-release\msi" $msi.Name
+$releaseMsiName = "ApocalipseWoW-$projectVersion.msi"
+$releaseMsi = Join-Path ".local-release\msi" $releaseMsiName
 Copy-Item -LiteralPath $msi.FullName -Destination $releaseMsi -Force
 if ($signingCertificate) {
     & signtool.exe sign /sha1 $SigningCertificateThumbprint /fd SHA256 /tr $TimestampUrl /td SHA256 $releaseMsi
@@ -457,8 +474,8 @@ if ($signingCertificate) {
 }
 Write-Host "MSI copied to: $releaseMsi"
 Write-Host "Build log: $buildLog"
-Write-Host "The installer is configured to create a desktop shortcut at: $([Environment]::GetFolderPath('CommonDesktopDirectory'))\ApocalipseWoW.lnk"
-Write-Host "A diagnostic console launcher is installed at: C:\Program Files\ApocalipseWoW\ApocalipseWoWDebug.exe"
+Write-Host "The installer is configured to create a desktop shortcut for: $jpackageAppName"
+Write-Host "The installer uses '$jpackageAppName' as its application and install-directory name."
 Write-Host "If the shortcut opens nothing, inspect: $env:LOCALAPPDATA\ApocalipseWoWLauncher\launcher.log"
 
 if ($BuildOnly) {
