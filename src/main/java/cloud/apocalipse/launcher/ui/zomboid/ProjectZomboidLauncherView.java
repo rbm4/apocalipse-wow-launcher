@@ -256,8 +256,13 @@ public final class ProjectZomboidLauncherView {
             refreshLaunchAvailability();
             Throwable failure = launch.getException();
             StartupLog.write("Could not start Project Zomboid.", failure);
-            launchStatus.setText(language.text("log.launchFailed"));
-            log(launchStatus.getText() + ": " + failure.getMessage());
+            if (failure instanceof ProjectZomboidLauncher.SteamNotRunningException) {
+                launchStatus.setText(agentMessages.getString("status.steamRequired"));
+                log(launchStatus.getText());
+            } else {
+                launchStatus.setText(language.text("log.launchFailed"));
+                log(launchStatus.getText() + ": " + failure.getMessage());
+            }
             setDetailsVisible(true);
         });
         Thread worker = new Thread(launch, "zomboid-launch");

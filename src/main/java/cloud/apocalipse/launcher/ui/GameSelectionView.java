@@ -2,6 +2,7 @@ package cloud.apocalipse.launcher.ui;
 
 import cloud.apocalipse.launcher.LauncherGame;
 import cloud.apocalipse.launcher.ui.wow.AppLanguage;
+import javafx.css.PseudoClass;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
@@ -12,11 +13,15 @@ import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 
 import java.util.function.Consumer;
 
 public final class GameSelectionView {
+    private static final PseudoClass WOW_HOVER = PseudoClass.getPseudoClass("wow-hover");
+    private static final PseudoClass ZOMBOID_HOVER = PseudoClass.getPseudoClass("zomboid-hover");
+
     private final Consumer<LauncherGame> onGameSelected;
     private final AppLanguage language;
 
@@ -39,19 +44,29 @@ public final class GameSelectionView {
         ColumnConstraints zomboidColumn = new ColumnConstraints();
         zomboidColumn.setPercentWidth(45);
         gameCards.getColumnConstraints().addAll(wowColumn, zomboidColumn);
-        gameCards.addRow(0,
-                gameCard(LauncherGame.WORLD_OF_WARCRAFT, "wow-artwork",
-                        "game.wow.title", "game.wow.description", "game.available"),
-                gameCard(LauncherGame.PROJECT_ZOMBOID, "zomboid-artwork",
-                        "game.zomboid.title", "game.zomboid.description", "game.available"));
+        Button wowCard = gameCard(LauncherGame.WORLD_OF_WARCRAFT, "wow-artwork",
+                "game.wow.title", "game.wow.description", "game.available");
+        Button zomboidCard = gameCard(LauncherGame.PROJECT_ZOMBOID, "zomboid-artwork",
+                "game.zomboid.title", "game.zomboid.description", "game.available");
+        gameCards.addRow(0, wowCard, zomboidCard);
 
         VBox heading = new VBox(title, subtitle);
         heading.setAlignment(Pos.CENTER);
         heading.getStyleClass().add("hero-copy");
         VBox content = new VBox(heading, gameCards);
         content.setAlignment(Pos.CENTER);
-        content.getStyleClass().addAll("launcher-page", "home-page");
-        return content;
+        content.getStyleClass().add("launcher-page");
+
+        Region shade = new Region();
+        shade.getStyleClass().add("game-selection-shade");
+        shade.setMouseTransparent(true);
+        StackPane page = new StackPane(shade, content);
+        page.getStyleClass().addAll("home-page", "game-selection-page");
+        wowCard.hoverProperty().addListener((observable, wasHovered, hovered) ->
+                page.pseudoClassStateChanged(WOW_HOVER, hovered));
+        zomboidCard.hoverProperty().addListener((observable, wasHovered, hovered) ->
+                page.pseudoClassStateChanged(ZOMBOID_HOVER, hovered));
+        return page;
     }
 
     private Button gameCard(LauncherGame game, String artworkClass, String titleKey,

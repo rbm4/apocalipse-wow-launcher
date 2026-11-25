@@ -25,7 +25,7 @@ Java sources live under [`cloud.apocalipse.launcher`](../../src/main/java/cloud/
 
 The Project Zomboid view has its own home, options, and website tabs. It stores the selected installation directory under the shared application data directory and uses the persistent JavaFX WebView cookie store installed during startup. The website tab opens `https://plataforma.apocalipse.cloud/`. The launcher background uses `loginhospital.png`.
 
-Game selection and the Project Zomboid launcher follow the WoW content insets, heading styles, and panel spacing defined in `launcher.css`. The game selector centers the heading and a row of two equally sized cards. The cards display `wow.jpg` and `pz-card.jpg`. The latter is a JavaFX-compatible JPEG made from `pz.webp`.
+Game selection and the Project Zomboid launcher follow the WoW content insets, heading styles, and panel spacing defined in `launcher.css`. The game selector centers two cards with their own artwork, `wow.jpg` and `pz-card.jpg`. Hovering either card changes the background of the entire selection page to `lkSelect.jpg` for WoW or `pzSelect.png` for Project Zomboid. A translucent shade keeps the heading readable, and moving the pointer off both cards restores the neutral background. Both cards share the same resting style and gold hover accent.
 
 The shared JavaFX stylesheet follows the [Apocalipse WoW website](https://wow.apocalipse.cloud/) typography. It uses Cinzel for headings and primary launch buttons and Open Sans for body text and other controls. The TrueType faces and their SIL Open Font licenses ship in [the font resource directory](../../src/main/resources/fonts), so JavaFX can load them offline.
 

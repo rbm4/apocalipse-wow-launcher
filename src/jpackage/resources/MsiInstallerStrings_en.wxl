@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <WixLocalization Culture="en-us" xmlns="http://schemas.microsoft.com/wix/2006/localization" Codepage="1252">
-  <String Id="MainFeatureTitle">Apocalipse WoW Launcher</String>
+  <String Id="MainFeatureTitle">Apocalipse BR Launcher</String>
   <String Id="DowngradeErrorMessage">Uma versão mais recente do [ProductName] já está instalada. A instalação de versões anteriores está desativada. O instalador será encerrado.</String>
   <String Id="DisallowUpgradeErrorMessage">Uma versão anterior do [ProductName] já está instalada. A atualização está desativada. O instalador será encerrado.</String>
 

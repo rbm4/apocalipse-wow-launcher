@@ -7,7 +7,7 @@
     <groupId>cloud.apocalipse</groupId>
     <artifactId>apocalipse-wow-launcher</artifactId>
     <version>${revision}</version>
-    <name>Apocalipse WoW Launcher</name>
+    <name>Apocalipse BR Launcher</name>
 
     <properties>
         <revision>0.2.0</revision>
@@ -17,8 +17,8 @@
         <jlibtorrent.version>2.0.12.9</jlibtorrent.version>
         <launcher.mainClass>cloud.apocalipse.launcher.LauncherMain</launcher.mainClass>
         <jpackage.appName>ApocalipseWoW</jpackage.appName>
-        <jpackage.vendor>ApocalipseWoW</jpackage.vendor>
-        <jpackage.description>Apocalipse WoW Launcher. The installer creates a desktop shortcut.</jpackage.description>
+        <jpackage.vendor>Apocalipse BR</jpackage.vendor>
+        <jpackage.description>Apocalipse BR Launcher. The installer creates a desktop shortcut.</jpackage.description>
         <jpackage.icon>${project.basedir}/src/main/resources/Apocalipse_wow_icon.png</jpackage.icon>
         <jpackage.resourceDir>${project.basedir}/src/jpackage/resources</jpackage.resourceDir>
         <jpackage.upgradeUuid>FE8A577B-C3F4-34D6-9126-F9F345F6CC45</jpackage.upgradeUuid>
