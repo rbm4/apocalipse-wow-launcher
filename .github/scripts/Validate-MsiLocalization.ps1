@@ -5,8 +5,11 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $resourceDirectory = Join-Path $PSScriptRoot "..\..\src\jpackage\resources"
-$englishPath = Join-Path $resourceDirectory "MsiInstallerStrings_en.wxl"
-$portuguesePath = Join-Path $resourceDirectory "MsiInstallerStrings_pt-BR.wxl"
+$localizationPath = Join-Path $resourceDirectory "MsiInstallerStrings_en.wxl"
+$additionalLocalizationFiles = @(Get-ChildItem -LiteralPath $resourceDirectory -Filter "*.wxl" -File | Where-Object Name -ne "MsiInstallerStrings_en.wxl")
+if ($additionalLocalizationFiles.Count -gt 0) {
+    throw "The MSI must use one PT-BR culture file to avoid duplicate WiX localization IDs. Unexpected files: $($additionalLocalizationFiles.Name -join ', ')"
+}
 
 function Read-WixLocalization {
     param(
@@ -44,16 +47,30 @@ function Read-WixLocalization {
     return $ids
 }
 
-$englishIds = Read-WixLocalization -Path $englishPath -ExpectedCulture "en-us"
-$portugueseIds = Read-WixLocalization -Path $portuguesePath -ExpectedCulture "pt-BR"
-$missingIds = @($englishIds | Where-Object { -not $portugueseIds.Contains($_) })
-$extraIds = @($portugueseIds | Where-Object { -not $englishIds.Contains($_) })
+$requiredIds = @(
+    "MainFeatureTitle",
+    "DowngradeErrorMessage",
+    "DisallowUpgradeErrorMessage",
+    "ShortcutPromptDlg_Title",
+    "ShortcutPromptDlgTitle",
+    "ShortcutPromptDlgBannerBitmap",
+    "ShortcutPromptDlgDescription",
+    "ShortcutPromptDlgDesktopShortcutControlLabel",
+    "ShortcutPromptDlgStartMenuShortcutControlLabel",
+    "InstallDirNotEmptyDlg_Title",
+    "InstallDirNotEmptyDlgInstallDirExistMessage",
+    "ContextMenuCommandLabel",
+    "OsConditionMessage"
+)
+$localizedIds = Read-WixLocalization -Path $localizationPath -ExpectedCulture "pt-BR"
+$missingIds = @($requiredIds | Where-Object { -not $localizedIds.Contains($_) })
+$extraIds = @($localizedIds | Where-Object { $_ -notin $requiredIds })
 
 if ($missingIds.Count -gt 0 -or $extraIds.Count -gt 0) {
     $details = @()
     if ($missingIds.Count -gt 0) { $details += "missing: $($missingIds -join ', ')" }
     if ($extraIds.Count -gt 0) { $details += "unexpected: $($extraIds -join ', ')" }
-    throw "PT-BR installer strings must match the English override ($($details -join '; '))."
+    throw "PT-BR installer strings are incomplete ($($details -join '; '))."
 }
 
-Write-Host "Validated $($portugueseIds.Count) PT-BR WiX strings; jpackage will include the pt-BR MSI culture."
+Write-Host "Validated $($localizedIds.Count) PT-BR WiX strings; jpackage will link a single pt-BR MSI culture."
