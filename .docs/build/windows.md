@@ -24,7 +24,17 @@ mvn clean verify -Pjpackage-msi "-Djpackage.icon=$icon"
 
 The native packaging step runs at `verify` and writes under `target/jpackage`. The local MSI script generates the ICO at the example path from the bundled PNG and supplies it to Maven.
 
-## Build and publish an MSI
+## Publish with GitHub Actions
+
+Run [Release Windows launcher](../../.github/workflows/launcher-release.yml) from the repository's Actions tab on the default branch. Choose a patch, minor, or major bump. Patch is the default. The workflow uses the highest valid launcher version among existing tags, GitHub releases (including drafts), and the local default in the POM.
+
+The Windows runner passes the result to Maven as `revision` and runs `clean verify`, including tests and MSI packaging. After a successful build it creates `launcher-v<version>` at the tested commit, uploads `ApocalipseWoW-<version>.msi` to a draft with generated release notes, then publishes that draft as Latest. The same version appears in the runtime JAR and MSI. A failed publication after tag creation reserves that version. A new run advances from it.
+
+For signed releases, configure the repository Actions secrets `WINDOWS_SIGNING_PFX_BASE64` (base64 of a password-protected certificate export) and `WINDOWS_SIGNING_PFX_PASSWORD`. The runner imports the certificate temporarily and uses the release script's Authenticode signing and verification. With neither secret set, the workflow publishes an unsigned installer for manual installation. With only one secret set or if signing fails, publication fails.
+
+To reproduce the build version from a release tag without publishing, run the local script with `-BuildOnly -Version <version>`. The version override applies to the build without editing the POM.
+
+## Build and publish an MSI locally
 
 ```powershell
 .\build-local-msi.ps1

@@ -1,0 +1,116 @@
+name: Release Windows launcher
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Launcher version increment
+        type: choice
+        required: true
+        default: patch
+        options:
+          - patch
+          - minor
+          - major
+
+concurrency:
+  group: launcher-release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: github.ref_type == 'branch' && github.ref_name == github.event.repository.default_branch
+    runs-on: windows-2025
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - name: Check out release source
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      - name: Calculate release version
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION_BUMP: ${{ inputs.bump }}
+        run: |
+          $baseline = ([xml](Get-Content -LiteralPath 'pom.xml' -Raw)).project.properties.revision
+          $tags = @(git tag --list 'launcher-v*')
+          if ($LASTEXITCODE -ne 0) { throw 'Could not read launcher tags.' }
+          $releaseTags = @(gh api "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" --paginate --jq '.[].tag_name')
+          if ($LASTEXITCODE -ne 0) { throw 'Could not read existing GitHub releases.' }
+          $version = ./.github/scripts/Get-NextLauncherVersion.ps1 -Bump $env:VERSION_BUMP -Baseline $baseline -Tags ($tags + $releaseTags)
+          "version=$version" >> $env:GITHUB_OUTPUT
+          Write-Host "Building launcher-v$version from $env:GITHUB_SHA"
+
+      - name: Build and test MSI
+        env:
+          LAUNCHER_VERSION: ${{ steps.version.outputs.version }}
+          SIGNING_PFX_BASE64: ${{ secrets.WINDOWS_SIGNING_PFX_BASE64 }}
+          SIGNING_PFX_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PFX_PASSWORD }}
+        run: |
+          $build = @{
+            BuildOnly = $true
+            SkipDependencyInstall = $true
+            Version = $env:LAUNCHER_VERSION
+          }
+          $pfx = Join-Path $env:RUNNER_TEMP 'launcher-signing.pfx'
+          $certificates = @()
+          try {
+            if ($env:SIGNING_PFX_BASE64 -or $env:SIGNING_PFX_PASSWORD) {
+              if (-not ($env:SIGNING_PFX_BASE64 -and $env:SIGNING_PFX_PASSWORD)) {
+                throw 'Set both Windows MSI signing secrets.'
+              }
+              $signTool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" |
+                Sort-Object { [version]$_.Directory.Parent.Name } -Descending |
+                Select-Object -First 1
+              if (-not $signTool) { throw 'Windows SDK SignTool was not found.' }
+              $env:Path = "$($signTool.DirectoryName);$env:Path"
+              [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:SIGNING_PFX_BASE64))
+              $password = ConvertTo-SecureString $env:SIGNING_PFX_PASSWORD -AsPlainText -Force
+              $certificates = @(Import-PfxCertificate -FilePath $pfx -Password $password -CertStoreLocation 'Cert:\CurrentUser\My')
+              $signers = @($certificates | Where-Object HasPrivateKey)
+              if ($signers.Count -ne 1) { throw 'The signing PFX must contain one signing private key.' }
+              $build.SigningCertificateThumbprint = $signers[0].Thumbprint
+            } else {
+              Write-Host 'Building an unsigned MSI for manual installation.'
+            }
+            Remove-Item Env:SIGNING_PFX_BASE64, Env:SIGNING_PFX_PASSWORD -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath $pfx -ErrorAction SilentlyContinue
+            ./build-local-msi.ps1 @build
+          } finally {
+            Remove-Item -LiteralPath $pfx -ErrorAction SilentlyContinue
+            foreach ($certificate in $certificates) {
+              Remove-Item -LiteralPath "Cert:\CurrentUser\My\$($certificate.Thumbprint)" -ErrorAction SilentlyContinue
+            }
+          }
+
+      - name: Publish MSI as GitHub Latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LAUNCHER_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          $tag = "launcher-v$env:LAUNCHER_VERSION"
+          $msi = (Get-Item -LiteralPath ".local-release/msi/ApocalipseWoW-$env:LAUNCHER_VERSION.msi").FullName
+          gh api "repos/$env:GITHUB_REPOSITORY/git/refs" --method POST -f "ref=refs/tags/$tag" -f "sha=$env:GITHUB_SHA" | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "Could not reserve $tag for $env:GITHUB_SHA." }
+          gh release create $tag $msi --repo $env:GITHUB_REPOSITORY --verify-tag --draft --generate-notes --title "Apocalipse WoW Launcher $env:LAUNCHER_VERSION"
+          if ($LASTEXITCODE -ne 0) { throw "Could not create or upload draft $tag." }
+          gh release edit $tag --repo $env:GITHUB_REPOSITORY --draft=false --latest
+          if ($LASTEXITCODE -ne 0) { throw "Could not publish $tag. Check its draft and MSI in GitHub Releases." }
+          "Published [$tag]($env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/releases/tag/$tag)." >> $env:GITHUB_STEP_SUMMARY

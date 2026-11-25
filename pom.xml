@@ -6,10 +6,11 @@
 
     <groupId>cloud.apocalipse</groupId>
     <artifactId>apocalipse-wow-launcher</artifactId>
-    <version>0.1.7</version>
+    <version>${revision}</version>
     <name>Apocalipse WoW Launcher</name>
 
     <properties>
+        <revision>0.2.0</revision>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.release>25</maven.compiler.release>
         <javafx.version>25.0.1</javafx.version>

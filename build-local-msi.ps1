@@ -1,6 +1,9 @@
-[CmdletBinding(PositionalBinding = $false)]
+[CmdletBinding(PositionalBinding = $false, DefaultParameterSetName = "Local")]
 param(
+    [Parameter(ParameterSetName = "Local")]
     [switch]$Release,
+    [Parameter(Mandatory, ParameterSetName = "BuildOnly")]
+    [switch]$BuildOnly,
     [string]$Version,
     [string]$SigningCertificateThumbprint,
     [string]$TimestampUrl = "http://timestamp.digicert.com",
@@ -28,7 +31,7 @@ function Get-ProjectVersion {
     [xml]$pom = Get-Content -LiteralPath "pom.xml"
     $ns = New-Object System.Xml.XmlNamespaceManager($pom.NameTable)
     $ns.AddNamespace("m", "http://maven.apache.org/POM/4.0.0")
-    return $pom.SelectSingleNode("/m:project/m:version", $ns).InnerText
+    return $pom.SelectSingleNode("/m:project/m:properties/m:revision", $ns).InnerText
 }
 
 function Assert-ProjectVersion {
@@ -253,7 +256,7 @@ function Set-ProjectVersion {
     Invoke-LoggedCommand `
         -LogPath (Join-Path ".local-release\logs" "version-set.log") `
         -FilePath "mvn" `
-        -Arguments @("--batch-mode", "--no-transfer-progress", "versions:set", "-DnewVersion=$NewVersion", "-DgenerateBackupPoms=false")
+        -Arguments @("--batch-mode", "--no-transfer-progress", "versions:set-property", "-Dproperty=revision", "-DnewVersion=$NewVersion", "-DgenerateBackupPoms=false")
 }
 
 function Publish-Release {
@@ -374,23 +377,23 @@ $currentVersion = Get-ProjectVersion
 Assert-ProjectVersion -Value $currentVersion -Source "Current pom.xml version"
 Write-Host "Current project version: $currentVersion"
 
-if ($Version) {
+if ($Version -and -not $BuildOnly) {
     Set-ProjectVersion -NewVersion $Version.Trim()
 } elseif ($Release -and (Prompt-YesNo "Bump pom.xml version before building?")) {
     $Version = Read-Host "New version"
     Set-ProjectVersion -NewVersion $Version.Trim()
 }
 
-$projectVersion = Get-ProjectVersion
+$projectVersion = if ($BuildOnly -and $Version) { $Version.Trim() } else { Get-ProjectVersion }
 Assert-ProjectVersion -Value $projectVersion -Source "Project version"
 $buildLog = Join-Path ".local-release\logs" "msi-build-$projectVersion.log"
-$iconPath = Join-Path ".local-release\resources" "ApocalipseWoW.ico"
+$iconPath = Join-Path $scriptRoot ".local-release\resources\ApocalipseWoW.ico"
 New-WindowsIcon `
     -SourcePath "src\main\resources\Apocalipse_wow_icon.png" `
     -DestinationPath $iconPath
 $resolvedIconPath = (Resolve-Path -LiteralPath $iconPath).Path
 $signingCertificate = $null
-$mavenOptions = @("--batch-mode", "--no-transfer-progress", "-Pjpackage-msi", "-Djpackage.icon=$resolvedIconPath")
+$mavenOptions = @("--batch-mode", "--no-transfer-progress", "-Pjpackage-msi", "-Drevision=$projectVersion", "-Djpackage.icon=$resolvedIconPath")
 if ($SigningCertificateThumbprint) {
     $SigningCertificateThumbprint = $SigningCertificateThumbprint -replace '\s', ''
     if ($SigningCertificateThumbprint -notmatch '^[0-9a-fA-F]{40}$') {
@@ -430,7 +433,7 @@ try {
         -Arguments ($mavenOptions + @("verify"))
 }
 
-$msi = Get-ChildItem -Path "target\jpackage" -Filter "*.msi" -File -Recurse -ErrorAction SilentlyContinue |
+$msi = Get-ChildItem -Path "target\jpackage" -Filter "ApocalipseWoW-$projectVersion.msi" -File -ErrorAction SilentlyContinue |
     Where-Object { $_.LastWriteTime -ge $buildStartedAt } |
     Sort-Object -Property LastWriteTime -Descending |
     Select-Object -First 1
@@ -456,6 +459,10 @@ Write-Host "Build log: $buildLog"
 Write-Host "The installer is configured to create a desktop shortcut at: $([Environment]::GetFolderPath('CommonDesktopDirectory'))\ApocalipseWoW.lnk"
 Write-Host "A diagnostic console launcher is installed at: C:\Program Files\ApocalipseWoW\ApocalipseWoWDebug.exe"
 Write-Host "If the shortcut opens nothing, inspect: $env:LOCALAPPDATA\ApocalipseWoWLauncher\launcher.log"
+
+if ($BuildOnly) {
+    return
+}
 
 if (-not $Release) {
     $Release = Prompt-YesNo "Create or update a GitHub release with this MSI?"
