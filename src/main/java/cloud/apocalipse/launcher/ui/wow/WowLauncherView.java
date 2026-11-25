@@ -7,6 +7,7 @@ import cloud.apocalipse.launcher.games.wow.community.RealmStatus;
 import cloud.apocalipse.launcher.games.wow.config.LauncherConfig;
 import cloud.apocalipse.launcher.games.wow.patch.PatchManifest;
 import cloud.apocalipse.launcher.infrastructure.diagnostics.StartupLog;
+import cloud.apocalipse.launcher.ui.HomeHero;
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
 import javafx.application.Platform;
@@ -263,15 +264,7 @@ public final class WowLauncherView {
     }
 
     private AnchorPane homeContent() {
-        Label title = new Label("Apocalipse WoW");
-        title.getStyleClass().add("hero-title");
-        ImageView titleIcon = new ImageView(new Image(getClass().getResourceAsStream("/Apocalipse_wow_icon.png")));
-        titleIcon.setFitWidth(42);
-        titleIcon.setFitHeight(42);
-        titleIcon.setPreserveRatio(true);
-        titleIcon.setSmooth(true);
-        HBox titleRow = new HBox(10, titleIcon, title);
-        titleRow.setAlignment(Pos.CENTER_LEFT);
+        HBox titleRow = HomeHero.titleRow("Apocalipse WoW", "/Apocalipse_wow_icon.png");
 
         heroSubtitleLabel = new Label(t("home.subtitle"));
         heroSubtitleLabel.getStyleClass().add("hero-subtitle");
@@ -353,16 +346,13 @@ public final class WowLauncherView {
         realmUpdatedLabel = new Label(t("realm.awaiting"));
         realmUpdatedLabel.getStyleClass().add("muted");
 
-        VBox box = new VBox(10,
-                header,
+        VBox status = new VBox(10,
                 realmNameLabel,
                 realmStatusRow("realm.status", realmStatusLabel),
                 realmStatusRow("realm.players", playersOnlineLabel),
                 realmStatusRow("realm.accounts", totalAccountsLabel),
                 realmUpdatedLabel);
-        box.setMinWidth(270);
-        box.getStyleClass().add("glass-panel");
-        return box;
+        return HomeHero.statusPanel(header, status);
     }
 
     private HBox realmStatusRow(String key, Label value) {

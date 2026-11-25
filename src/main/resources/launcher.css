@@ -1,6 +1,29 @@
+@font-face {
+    src: url("fonts/OpenSans-Regular.ttf");
+}
+
+@font-face {
+    src: url("fonts/OpenSans-Bold.ttf");
+}
+
+@font-face {
+    src: url("fonts/Cinzel-Bold.ttf");
+}
+
 .root {
-    -fx-font-family: "Segoe UI", Arial, sans-serif;
+    -fx-font-family: "Open Sans";
     -fx-background-color: #080b10;
+}
+
+.game-card-title,
+.hero-title,
+.panel-title,
+.section-title,
+.realm-name,
+.setup-title,
+.news-title {
+    -fx-font-family: "Cinzel";
+    -fx-font-weight: 700;
 }
 
 .root-shell {
@@ -185,7 +208,6 @@
 
 .game-card-title {
     -fx-font-size: 20px;
-    -fx-font-weight: 800;
     -fx-text-fill: #ffffff;
 }
 
@@ -217,7 +239,6 @@
 
 .hero-title {
     -fx-font-size: 36px;
-    -fx-font-weight: 800;
     -fx-text-fill: #ffe6a3;
     -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.75), 4, 0.4, 1, 1);
 }
@@ -231,7 +252,6 @@
 .panel-title,
 .section-title {
     -fx-font-size: 16px;
-    -fx-font-weight: 800;
     -fx-text-fill: #f4d27a;
 }
 
@@ -243,7 +263,6 @@
 
 .realm-name {
     -fx-font-size: 20px;
-    -fx-font-weight: 800;
     -fx-text-fill: #ffffff;
 }
 
@@ -335,7 +354,9 @@
 }
 
 .update-button {
+    -fx-font-family: "Cinzel";
     -fx-font-size: 22px;
+    -fx-font-weight: 700;
     -fx-padding: 18px 34px;
     -fx-background-color: linear-gradient(to right, #e6521f, #b45a25);
     -fx-border-color: rgba(255, 217, 128, 0.45);
@@ -415,7 +436,6 @@
 
 .setup-title {
     -fx-font-size: 22px;
-    -fx-font-weight: 900;
     -fx-text-fill: #ffffff;
 }
 
@@ -512,7 +532,6 @@
 
 .news-title {
     -fx-font-size: 15px;
-    -fx-font-weight: 800;
     -fx-text-fill: #ffffff;
 }
 

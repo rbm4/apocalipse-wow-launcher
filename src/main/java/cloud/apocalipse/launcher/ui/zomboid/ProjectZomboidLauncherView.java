@@ -6,6 +6,7 @@ import cloud.apocalipse.launcher.games.zomboid.SteamInstallationDetector;
 import cloud.apocalipse.launcher.games.zomboid.config.ProjectZomboidConfig;
 import cloud.apocalipse.launcher.games.zomboid.config.ZomboidOptimization;
 import cloud.apocalipse.launcher.infrastructure.diagnostics.StartupLog;
+import cloud.apocalipse.launcher.ui.HomeHero;
 import cloud.apocalipse.launcher.ui.wow.AppLanguage;
 import javafx.application.Platform;
 import javafx.concurrent.Task;
@@ -32,6 +33,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.shape.Rectangle;
+import javafx.scene.web.WebEngine;
 import javafx.scene.web.WebView;
 import javafx.stage.DirectoryChooser;
 import javafx.stage.Stage;
@@ -39,10 +41,12 @@ import javafx.util.Duration;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Base64;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.ResourceBundle;
@@ -50,6 +54,7 @@ import java.util.Set;
 
 public final class ProjectZomboidLauncherView {
     private static final String WEBSITE_URL = "https://plataforma.apocalipse.cloud/";
+    private static final String TITLE_ICON = "/zombified.png";
     private static final DateTimeFormatter LOG_TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm:ss");
 
     private final AppLanguage language;
@@ -111,13 +116,21 @@ public final class ProjectZomboidLauncherView {
     }
 
     private Node homeContent() {
-        Label title = new Label(language.text("tab.zomboid.home"));
-        title.getStyleClass().add("hero-title");
+        HBox titleRow = HomeHero.titleRow(language.text("tab.zomboid.home"), TITLE_ICON);
+        Label subtitle = new Label(language.text("home.zomboidSubtitle"));
+        subtitle.getStyleClass().add("hero-subtitle");
+        subtitle.setWrapText(true);
+
         playButton = new Button(language.text("button.zomboidPlay"));
         playButton.getStyleClass().add("update-button");
         playButton.setOnAction(event -> launchGame());
+        HBox actions = new HBox(playButton);
+        actions.setAlignment(Pos.CENTER_LEFT);
 
-        VBox heroCopy = new VBox(title, playButton);
+        Label seasonBadge = new Label(language.text("home.zomboidBadge"));
+        seasonBadge.getStyleClass().add("release-badge");
+
+        VBox heroCopy = new VBox(titleRow, subtitle, actions, seasonBadge);
         heroCopy.getStyleClass().add("hero-copy");
         heroCopy.setAlignment(Pos.CENTER_LEFT);
         HBox.setHgrow(heroCopy, Priority.ALWAYS);
@@ -138,15 +151,28 @@ public final class ProjectZomboidLauncherView {
         Label title = new Label(language.text("server.zomboidStatus"));
         title.getStyleClass().add("panel-title");
         WebView widget = new WebView();
-        widget.setMinSize(0, 200);
-        widget.setPrefSize(320, 200);
-        widget.setMaxHeight(200);
         widget.setContextMenuEnabled(false);
-        widget.getEngine().load(getClass().getResource("/zomboid-server-status.html").toExternalForm());
+        WebEngine engine = widget.getEngine();
+        applyWidgetIcon(engine);
+        engine.load(getClass().getResource("/zomboid-server-status.html").toExternalForm());
 
-        VBox panel = new VBox(10, title, widget);
-        panel.getStyleClass().add("glass-panel");
-        return panel;
+        return HomeHero.statusPanel(title, widget);
+    }
+
+    private void applyWidgetIcon(WebEngine engine) {
+        // The widget's WebP logo does not render in JavaFX WebView. A user stylesheet also applies inside the iframe.
+        try (var icon = getClass().getResourceAsStream(TITLE_ICON)) {
+            String image = Base64.getEncoder().encodeToString(icon.readAllBytes());
+            String css = """
+                    #header-orange img[src="https://trackyserver.com/pages/logos/project-zomboid-server-small.webp"] {
+                        content: url("data:image/png;base64,%s");
+                    }
+                    """.formatted(image);
+            String encodedCss = Base64.getEncoder().encodeToString(css.getBytes(StandardCharsets.UTF_8));
+            engine.setUserStyleSheetLocation("data:text/css;charset=utf-8;base64," + encodedCss);
+        } catch (IOException failure) {
+            StartupLog.write("Could not load the Project Zomboid widget icon.", failure);
+        }
     }
 
     private Node launchDetails() {
@@ -318,7 +344,8 @@ public final class ProjectZomboidLauncherView {
                 optimizationGroup(stage, ZomboidOptimization.Group.WORLD, selected),
                 optimizationGroup(stage, ZomboidOptimization.Group.NETWORK, selected));
         groups.addRow(0, left, right);
-        return new VBox(10, heading, description, groups,
+        return new VBox(10, heading, description,
+                optimizationGroup(stage, ZomboidOptimization.Group.HIGH_IMPACT, selected), groups,
                 optimizationGroup(stage, ZomboidOptimization.Group.SERVER, selected));
     }
 
@@ -337,7 +364,14 @@ public final class ProjectZomboidLauncherView {
                 index++;
             }
         }
-        VBox panel = new VBox(10, title, options);
+        VBox panel = new VBox(10, title);
+        if (group == ZomboidOptimization.Group.HIGH_IMPACT) {
+            Label description = new Label(agentMessages.getString("group.HIGH_IMPACT.description"));
+            description.getStyleClass().add("muted");
+            description.setWrapText(true);
+            panel.getChildren().add(description);
+        }
+        panel.getChildren().add(options);
         panel.getStyleClass().add("glass-panel");
         return panel;
     }

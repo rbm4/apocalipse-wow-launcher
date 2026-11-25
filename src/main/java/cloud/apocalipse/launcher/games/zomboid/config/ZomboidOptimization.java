@@ -1,6 +1,7 @@
 package cloud.apocalipse.launcher.games.zomboid.config;
 
 public enum ZomboidOptimization {
+    CLIENT_CHUNK_MAP("clientChunkMap", Group.HIGH_IMPACT),
     JAVA_PATHFINDING("pathfinding.forceJava", Group.SIMULATION),
     CHARACTER_STATS("characterStats", Group.SIMULATION),
     ACTOR_ALLOCATIONS("actorUpdateAllocation", Group.SIMULATION),
@@ -26,7 +27,7 @@ public enum ZomboidOptimization {
     CHUNK_ASYNC_SEND("chunkAsyncSend", Group.SERVER),
     WORKSHOP_ASYNC("workshop.asyncCheck.enabled", Group.SERVER);
 
-    public enum Group { SIMULATION, SCRIPTING, WORLD, NETWORK, SERVER }
+    public enum Group { HIGH_IMPACT, SIMULATION, SCRIPTING, WORLD, NETWORK, SERVER }
 
     private final String property;
     private final Group group;

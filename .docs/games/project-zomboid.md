@@ -8,9 +8,13 @@ Detection runs in the background and saves the result in `project-zomboid.proper
 
 ## Play and server status
 
+The home tab shows the current season (Season 5) and points players to **Opções** to enable the optional Apocalipse BR features. Its status widget uses the same 320 × 200 viewport as the WoW realm status.
+
 **Jogar** becomes available after saving an installation folder containing `ProjectZomboid64.exe` or `ProjectZomboid32.exe`. With all optimizations off, it starts the executable from that folder, preferring the 64-bit version when both are present. The action stays disabled until the game exits.
 
 Use **Ver detalhes** on the home tab to see the timestamped launch log. Launch failures open the log automatically. **Status do Servidor** embeds the TrackyServer widget for **APOCALIPSE [BR]**.
+
+The status WebView uses a stylesheet to display the bundled Zomboid PNG in the widget header because JavaFX fails to render TrackyServer's WebP logo. The stylesheet is scoped to that logo and the widget still fetches live status from TrackyServer.
 
 ## Game memory
 
@@ -18,7 +22,9 @@ Use **Ver detalhes** on the home tab to see the timestamped launch log. Launch f
 
 ## ApocBR optimizations
 
-**Opções → Otimizações ApocBR** groups the agent switches by engine subsystem. Hover over a checkbox to see which engine behavior it changes. The launcher saves client selections in `project-zomboid.properties`. Dedicated server switches are shown for reference.
+**Opções → Otimizações ApocBR** highlights the most effective client optimizations before grouping the other switches by engine subsystem. Hover over a checkbox to see which engine behavior it changes. The launcher saves client selections in `project-zomboid.properties`. Dedicated server switches are shown for reference.
+
+Under **Otimizações de maior impacto**, **Reduzir a área carregada do mapa** is off by default and takes effect the next time the game starts. It passes `-Dapocbr.optimization.clientChunkMap.enabled=true` to a compatible agent. At 1920×1080 and above, the cap reduces the client's map window from 19×19 to 13×13 chunks (361 to 169 slots per player, about 53% fewer). Smaller windows keep their original size. The cap reduces the amount of world data the client can keep loaded and can shrink visible map coverage when zoomed out.
 
 When at least one client optimization is on, **Jogar** requests the latest stable release from [ApocBR Zomboid Patches](https://github.com/rbm4/apocalipsebr-zomboid-patches/releases/latest). The release must include the shaded `apocbr-agent.jar` asset with GitHub's SHA-256 digest. The launcher hashes the cached JAR and downloads the asset only if the verified copy is missing or corrupt. It checks the downloaded size, checksum, and agent entry point before storing the file under `zomboid-agent` in the launcher data directory. A failed check opens the launch log with the error.
 

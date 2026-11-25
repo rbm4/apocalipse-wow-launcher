@@ -90,6 +90,8 @@ public enum AppLanguage {
             case "setup.description" -> "Baixe um cliente pronto para o Apocalipse ou selecione uma instalação existente do WoW 3.3.5a.";
             case "setup.existingNotice" -> "Ao usar uma instalação existente, o launcher irá ajustar o realmlist e gerenciar arquivos de patch dentro dessa pasta.";
             case "home.subtitle" -> "Atualize, verifique e entre em Azeroth pelo reino Apocalipse.";
+            case "home.zomboidSubtitle" -> "Ative as opções personalizadas do Apocalipse BR no menu Opções.";
+            case "home.zomboidBadge" -> "Temporada 5";
             case "home.badge" -> "Temporada 1: O Início";
             case "realm.title" -> "Status do Reino";
             case "realm.checking" -> "Verificando...";
@@ -258,6 +260,8 @@ public enum AppLanguage {
             case "setup.description" -> "Download a client ready for Apocalipse or select an existing WoW 3.3.5a installation.";
             case "setup.existingNotice" -> "When using an existing installation, the launcher will update the realmlist and manage patch files inside that folder.";
             case "home.subtitle" -> "Patch, verify, and enter Azeroth through the Apocalipse realm.";
+            case "home.zomboidSubtitle" -> "Enable Apocalipse BR's custom features in the Options menu.";
+            case "home.zomboidBadge" -> "Season 5";
             case "home.badge" -> "Season 1: The beginning";
             case "realm.title" -> "Realm Status";
             case "realm.checking" -> "Checking...";
@@ -426,6 +430,8 @@ public enum AppLanguage {
             case "setup.description" -> "Descarga un cliente listo para Apocalipse o selecciona una instalación existente de WoW 3.3.5a.";
             case "setup.existingNotice" -> "Al usar una instalación existente, el launcher ajustará el realmlist y gestionará archivos de parche dentro de esa carpeta.";
             case "home.subtitle" -> "Actualiza, verifica y entra en Azeroth por el reino Apocalipse.";
+            case "home.zomboidSubtitle" -> "Activa las funciones personalizadas de Apocalipse BR en el menú Opciones.";
+            case "home.zomboidBadge" -> "Temporada 5";
             case "home.badge" -> "Temporada 1 el princípio";
             case "realm.title" -> "Estado del Reino";
             case "realm.checking" -> "Verificando...";

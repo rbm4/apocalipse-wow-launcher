@@ -14,3 +14,5 @@ User settings live in `%LOCALAPPDATA%\ApocalipseWoWLauncher\launcher.properties`
 4. Launch with the selected profile after synchronization succeeds. The launch service deletes the client's `Cache` directory before starting `Wow.exe`.
 
 The backend publishes the MPQ. The launcher consumes the manifest and artifact. The home tab also fetches news and refreshes realm status every 30 seconds. The Site tab opens the community website in a JavaFX web view.
+
+The home tab uses the same status card layout as Project Zomboid, with a 320 × 200 area below the status heading.

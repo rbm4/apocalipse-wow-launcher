@@ -27,6 +27,8 @@ The Project Zomboid view has its own home, options, and website tabs. It stores 
 
 Game selection and the Project Zomboid launcher follow the WoW content insets, heading styles, and panel spacing defined in `launcher.css`. The game selector centers the heading and a row of two equally sized cards. The cards display `wow.jpg` and `pz-card.jpg`. The latter is a JavaFX-compatible JPEG made from `pz.webp`.
 
+The shared JavaFX stylesheet follows the [Apocalipse WoW website](https://wow.apocalipse.cloud/) typography. It uses Cinzel for headings and primary launch buttons and Open Sans for body text and other controls. The TrueType faces and their SIL Open Font licenses ship in [the font resource directory](../../src/main/resources/fonts), so JavaFX can load them offline.
+
 `WowOptionsPane` renders setup and settings controls and emits actions through callbacks. It leaves persistence and game actions to the WoW view and services.
 
 ## Adding a game
