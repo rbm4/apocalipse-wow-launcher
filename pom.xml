@@ -16,7 +16,7 @@
         <javafx.version>25.0.1</javafx.version>
         <jlibtorrent.version>2.0.12.9</jlibtorrent.version>
         <launcher.mainClass>cloud.apocalipse.launcher.LauncherMain</launcher.mainClass>
-        <jpackage.appName>ApocalipseWoW</jpackage.appName>
+        <jpackage.appName>Apocalipse [BR] Launcher</jpackage.appName>
         <jpackage.vendor>Apocalipse BR</jpackage.vendor>
         <jpackage.description>Apocalipse BR Launcher. The installer creates a desktop shortcut.</jpackage.description>
         <jpackage.icon>${project.basedir}/src/main/resources/Apocalipse_wow_icon.png</jpackage.icon>
