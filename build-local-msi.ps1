@@ -363,6 +363,7 @@ $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $scriptRoot
 
 New-Item -ItemType Directory -Force -Path ".local-release\logs", ".local-release\msi", ".local-release\resources" | Out-Null
+& (Join-Path $scriptRoot ".github\scripts\Validate-MsiLocalization.ps1")
 
 if ($PSBoundParameters.ContainsKey("Version")) {
     Assert-ProjectVersion -Value $Version -Source "Version"

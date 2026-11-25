@@ -24,6 +24,8 @@ mvn clean verify -Pjpackage-msi "-Djpackage.icon=$icon"
 
 The native packaging step runs at `verify` and writes under `target/jpackage`. The local MSI script generates the ICO at the example path from the bundled PNG and supplies it to Maven.
 
+The MSI includes English and Brazilian Portuguese WiX UI cultures. `src/jpackage/resources/MsiInstallerStrings_pt-BR.wxl` supplies the Portuguese installer messages; keep its string IDs aligned with `MsiInstallerStrings_en.wxl`. The localization validator runs in the local MSI script and GitHub release workflow, so a missing culture or untranslated jpackage string blocks packaging before publication. Windows Installer selects a UI language available on the user's Windows installation.
+
 ## Publish with GitHub Actions
 
 Run [Release Windows launcher](../../.github/workflows/launcher-release.yml) from the repository's Actions tab on the default branch. Choose a patch, minor, or major bump. Patch is the default. The workflow uses the highest valid launcher version among existing tags, GitHub releases (including drafts), and the local default in the POM.
