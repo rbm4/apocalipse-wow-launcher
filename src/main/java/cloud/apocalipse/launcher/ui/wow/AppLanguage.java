@@ -56,7 +56,6 @@ public enum AppLanguage {
             case "game.wow.description" -> "Atualize seu cliente e entre no reino Apocalipse.";
             case "game.zomboid.title" -> "Project Zomboid";
             case "game.zomboid.description" -> "Prepare-se para sobreviver ao apocalipse zumbi.";
-            case "button.zomboidPlay" -> "Jogar";
             case "server.zomboidStatus" -> "Status do Servidor";
             case "status.zomboidSelectFolder" -> "Selecione a pasta de instalação do Project Zomboid em Opções.";
             case "status.zomboidStarting" -> "Iniciando Project Zomboid...";
@@ -231,7 +230,6 @@ public enum AppLanguage {
             case "game.wow.description" -> "Update your client and join the Apocalipse realm.";
             case "game.zomboid.title" -> "Project Zomboid";
             case "game.zomboid.description" -> "Get ready to survive the zombie apocalypse.";
-            case "button.zomboidPlay" -> "Play";
             case "server.zomboidStatus" -> "Server Status";
             case "status.zomboidSelectFolder" -> "Select the Project Zomboid installation folder in Options.";
             case "status.zomboidStarting" -> "Starting Project Zomboid...";
@@ -406,7 +404,6 @@ public enum AppLanguage {
             case "game.wow.description" -> "Actualiza tu cliente y únete al reino Apocalipse.";
             case "game.zomboid.title" -> "Project Zomboid";
             case "game.zomboid.description" -> "Prepárate para sobrevivir al apocalipsis zombi.";
-            case "button.zomboidPlay" -> "Jugar";
             case "server.zomboidStatus" -> "Estado del servidor";
             case "status.zomboidSelectFolder" -> "Selecciona la carpeta de instalación de Project Zomboid en Opciones.";
             case "status.zomboidStarting" -> "Iniciando Project Zomboid...";

@@ -481,6 +481,11 @@
     -fx-background-color: linear-gradient(to right, #cb682c, #a34d21);
 }
 
+.game-launch-profile {
+    -fx-pref-width: 192px;
+    -fx-pref-height: 27px;
+}
+
 .combo-box .list-cell {
     -fx-text-fill: #ffffff;
     -fx-background-color: transparent;

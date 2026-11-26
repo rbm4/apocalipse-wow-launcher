@@ -28,8 +28,10 @@ public final class LauncherApp extends Application {
             StartupLog.write("Starting launcher.", null);
             PersistentCookieStore.install(config.appDataDirectory().resolve("website-cookies.properties"));
             var appData = config.appDataDirectory();
-            var agentCache = new AgentReleaseCache(appData.resolve("zomboid-agent"));
-            new LauncherView(config, wow, new ProjectZomboidLauncher(appData, agentCache),
+            var agentCache = new AgentReleaseCache(appData.resolve("zomboid-agent"), AgentReleaseCache.Agent.APOCBR);
+            var zombieBuddyCache = new AgentReleaseCache(appData.resolve("zombiebuddy-agent"),
+                    AgentReleaseCache.Agent.ZOMBIE_BUDDY);
+            new LauncherView(config, wow, new ProjectZomboidLauncher(appData, agentCache, zombieBuddyCache),
                     new LauncherReleases(appData.resolve("updates")),
                     getHostServices()::showDocument).show(stage);
         } catch (RuntimeException exc) {

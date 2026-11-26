@@ -23,17 +23,21 @@ try {
         throw 'Launcher MSI SHA-256 changed after download.'
     }
     $signature = Get-AuthenticodeSignature -LiteralPath $msi
-    if ($signature.Status -ne 'Valid') {
+    if (-not [string]::IsNullOrWhiteSpace($env:APOC_UPDATE_SIGNER)) {
+        if ($signature.Status -ne 'Valid') {
+            throw "Windows rejected the MSI signature: $($signature.Status)."
+        }
+        $sha256 = [Security.Cryptography.SHA256]::Create()
+        try {
+            $publisher = [BitConverter]::ToString($sha256.ComputeHash($signature.SignerCertificate.RawData)).Replace('-', '')
+        } finally {
+            $sha256.Dispose()
+        }
+        if ($publisher -ne $env:APOC_UPDATE_SIGNER) {
+            throw 'The MSI signing certificate does not match the configured publisher.'
+        }
+    } elseif ($signature.Status -notin @('Valid', 'NotSigned')) {
         throw "Windows rejected the MSI signature: $($signature.Status)."
-    }
-    $sha256 = [Security.Cryptography.SHA256]::Create()
-    try {
-        $publisher = [BitConverter]::ToString($sha256.ComputeHash($signature.SignerCertificate.RawData)).Replace('-', '')
-    } finally {
-        $sha256.Dispose()
-    }
-    if ($publisher -ne $env:APOC_UPDATE_SIGNER) {
-        throw 'The MSI signing certificate does not match the configured publisher.'
     }
 
     $installer = New-Object -ComObject WindowsInstaller.Installer

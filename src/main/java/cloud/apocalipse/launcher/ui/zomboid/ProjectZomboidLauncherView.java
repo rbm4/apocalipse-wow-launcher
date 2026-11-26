@@ -4,11 +4,14 @@ import cloud.apocalipse.launcher.games.zomboid.AgentReleaseCache;
 import cloud.apocalipse.launcher.games.zomboid.ProjectZomboidLauncher;
 import cloud.apocalipse.launcher.games.zomboid.SteamInstallationDetector;
 import cloud.apocalipse.launcher.games.zomboid.config.ProjectZomboidConfig;
+import cloud.apocalipse.launcher.games.zomboid.config.ZomboidLaunchMode;
 import cloud.apocalipse.launcher.games.zomboid.config.ZomboidOptimization;
 import cloud.apocalipse.launcher.infrastructure.diagnostics.StartupLog;
 import cloud.apocalipse.launcher.ui.HomeHero;
 import cloud.apocalipse.launcher.ui.wow.AppLanguage;
 import javafx.application.Platform;
+import javafx.beans.property.ObjectProperty;
+import javafx.beans.property.SimpleObjectProperty;
 import javafx.concurrent.Task;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -18,6 +21,8 @@ import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.Hyperlink;
 import javafx.scene.control.Label;
+import javafx.scene.control.MenuButton;
+import javafx.scene.control.MenuItem;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
@@ -68,6 +73,9 @@ public final class ProjectZomboidLauncherView {
     private Label gameDirectoryLabel;
     private ZomboidMemoryOptions memoryOptions;
     private Button playButton;
+    private final ObjectProperty<ZomboidLaunchMode> launchMode =
+            new SimpleObjectProperty<>(ZomboidLaunchMode.STANDARD);
+    private MenuButton launchOptionsButton;
     private Label launchStatus;
     private TextArea logArea;
     private Hyperlink detailsLink;
@@ -129,10 +137,11 @@ public final class ProjectZomboidLauncherView {
         subtitle.getStyleClass().add("hero-subtitle");
         subtitle.setWrapText(true);
 
-        playButton = new Button(language.text("button.zomboidPlay"));
+        playButton = new Button(language.text("button.updatePlay"));
         playButton.getStyleClass().add("update-button");
         playButton.setOnAction(event -> launchGame());
-        HBox actions = new HBox(playButton);
+        launchOptionsButton = launchModeSelector();
+        HBox actions = new HBox(10, playButton, launchOptionsButton);
         actions.setAlignment(Pos.CENTER_LEFT);
 
         Label seasonBadge = new Label(language.text("home.zomboidBadge"));
@@ -153,6 +162,25 @@ public final class ProjectZomboidLauncherView {
         refreshLaunchAvailability();
         log(language.text("log.launcherReady"));
         return content;
+    }
+
+    private MenuButton launchModeSelector() {
+        MenuButton selector = new MenuButton(launchModeLabel(launchMode.get()));
+        selector.getStyleClass().add("launch-options-button");
+        selector.setAccessibleText(language.text("button.launchOptions"));
+        for (ZomboidLaunchMode mode : ZomboidLaunchMode.values()) {
+            MenuItem option = new MenuItem(launchModeLabel(mode));
+            option.setOnAction(event -> {
+                launchMode.set(mode);
+                selector.setText(option.getText());
+            });
+            selector.getItems().add(option);
+        }
+        return selector;
+    }
+
+    private String launchModeLabel(ZomboidLaunchMode mode) {
+        return mode == ZomboidLaunchMode.VIEWPOINT ? "Viewpoint" : language.text("profile.default");
     }
 
     private Node serverStatusPanel() {
@@ -214,8 +242,9 @@ public final class ProjectZomboidLauncherView {
     private void refreshLaunchAvailability() {
         boolean configured = configuredInstallation().isPresent();
         playButton.setDisable(launchingOrPlaying || !configured || savingMemorySettings());
+        launchOptionsButton.setDisable(launchingOrPlaying);
         if (!launchingOrPlaying) {
-            playButton.setText(language.text("button.zomboidPlay"));
+            playButton.setText(language.text("button.updatePlay"));
             launchStatus.setText(language.text(configured ? "status.readyToPlay" : "status.zomboidSelectFolder"));
         }
     }
@@ -227,17 +256,19 @@ public final class ProjectZomboidLauncherView {
         }
         Path directory = installation.get();
         Set<ZomboidOptimization> optimizations = config.optimizations();
+        ZomboidLaunchMode mode = launchMode.getValue();
         launchingOrPlaying = true;
         startingGame = true;
-        playButton.setDisable(true);
+        refreshLaunchAvailability();
         launchStatus.setText(language.text("status.zomboidStarting"));
         log(language.text("status.zomboidStarting") + " " + directory);
 
         Task<ProjectZomboidLauncher.Launch> launch = new Task<>() {
             @Override
             protected ProjectZomboidLauncher.Launch call() throws IOException, InterruptedException {
-                return launcher.launch(directory, optimizations,
-                        status -> Platform.runLater(() -> showAgentStatus(status)));
+                return launcher.launch(directory, mode, optimizations,
+                        progress -> Platform.runLater(() -> showAgentStatus(progress)),
+                        progress -> Platform.runLater(() -> showWorkshopStatus(progress)));
             }
         };
         launch.setOnSucceeded(event -> {
@@ -274,15 +305,30 @@ public final class ProjectZomboidLauncherView {
         return memoryOptions != null && memoryOptions.savingProperty().get();
     }
 
-    private void showAgentStatus(AgentReleaseCache.Status status) {
-        String key = switch (status) {
+    private void showAgentStatus(AgentReleaseCache.Progress progress) {
+        String key = switch (progress.status()) {
             case CHECKING -> "status.checking";
             case DOWNLOADING -> "status.downloading";
             case VERIFIED -> "status.verified";
         };
-        String message = agentMessages.getString(key);
+        showLaunchProgress(agentMessages.getString(key).formatted(progress.agent().displayName()));
+    }
+
+    private void showLaunchProgress(String message) {
         launchStatus.setText(message);
         log(message);
+    }
+
+    private void showWorkshopStatus(ProjectZomboidLauncher.WorkshopProgress progress) {
+        String message = switch (progress.status()) {
+            case PREPARING -> agentMessages.getString("status.workshop");
+            case CHECKING -> agentMessages.getString("status.workshopChecking")
+                    .formatted(progress.position(), progress.total(), progress.modName());
+            case VERIFIED -> agentMessages.getString("status.workshopVerified")
+                    .formatted(progress.position(), progress.total(), progress.modName());
+            case STAGING -> agentMessages.getString("status.workshopStaging");
+        };
+        showLaunchProgress(message);
     }
 
     private void gameExited(int exitCode) {
@@ -398,6 +444,13 @@ public final class ProjectZomboidLauncherView {
         checkbox.getStyleClass().add("zomboid-optimization");
         checkbox.setSelected(selected);
         checkbox.setDisable(!optimization.availableOnClient());
+        if (ZomboidLaunchMode.VIEWPOINT.disabledOptimizations().contains(optimization)) {
+            launchMode.addListener((observable, previous, mode) -> {
+                boolean allowed = mode.allowsOptimization(optimization);
+                checkbox.setDisable(!allowed);
+                checkbox.setSelected(allowed && config.optimizations().contains(optimization));
+            });
+        }
         checkbox.setWrapText(true);
         checkbox.setMinWidth(0);
         checkbox.setOnAction(event -> {

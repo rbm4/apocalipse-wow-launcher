@@ -35,10 +35,11 @@ public final class WindowsLauncherInstaller {
             return Optional.empty();
         }
         String publisher = jar.getMainAttributes().getValue("Launcher-Update-Publisher-Sha256");
-        if (publisher == null || !publisher.matches("[a-fA-F0-9]{64}")) {
+        if (publisher != null && !publisher.isBlank() && !publisher.matches("[a-fA-F0-9]{64}")) {
             return Optional.empty();
         }
-        return Optional.of(new WindowsLauncherInstaller(executable.get(), publisher.toLowerCase(Locale.ROOT)));
+        String publisherSha256 = publisher == null ? "" : publisher.toLowerCase(Locale.ROOT);
+        return Optional.of(new WindowsLauncherInstaller(executable.get(), publisherSha256));
     }
 
     public void prepare(Path msi, LauncherReleases.Update update, String failureMessage, String rebootMessage)

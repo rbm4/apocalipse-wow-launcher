@@ -170,6 +170,7 @@ public final class WowLauncherView {
         cancelClientDownloadButton.setOnAction(event -> cancelClientDownload());
 
         launchProfileCombo = new ComboBox<>();
+        launchProfileCombo.getStyleClass().add("game-launch-profile");
         launchProfileCombo.getItems().addAll(LaunchProfile.values());
         launchProfileCombo.setValue(LaunchProfile.fromId(config.launchProfile()));
         configureLaunchProfileComboDisplay();

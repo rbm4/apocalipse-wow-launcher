@@ -1,6 +1,7 @@
 package cloud.apocalipse.launcher.games.zomboid;
 
 import cloud.apocalipse.launcher.games.zomboid.config.ZomboidJvmSettings;
+import cloud.apocalipse.launcher.games.zomboid.config.ZomboidLaunchMode;
 import cloud.apocalipse.launcher.games.zomboid.config.ZomboidOptimization;
 
 import java.io.IOException;
@@ -15,6 +16,8 @@ import java.util.function.Consumer;
 
 public final class ProjectZomboidLauncher {
     private static final String STEAM_VM_ARGUMENT = "-Dzomboid.steam=1";
+    private static final String DISABLE_LUA = "-Dapocbr.lua.enabled=false";
+    private static final String DISABLE_LUA_TELEMETRY = "-Dapocbr.telemetry.lua.enabled=false";
 
     private static final List<String> CLIENT_VM_ARGUMENTS = List.of(
             "-Djava.awt.headless=true",
@@ -28,7 +31,7 @@ public final class ProjectZomboidLauncher {
 
     private static final List<String> UNSELECTED_AGENT_FEATURES = List.of(
             "-Dapocbr.postgres.enabled=false",
-            "-Dapocbr.lua.enabled=false",
+            DISABLE_LUA,
             "-Dapocbr.npc.enabled=false",
             "-Dapocbr.restart.enabled=false",
             "-Dapocbr.networkDiagnostics.enabled=false",
@@ -37,15 +40,25 @@ public final class ProjectZomboidLauncher {
             "-Dapocbr.hotfixes.assetLogs.enabled=false");
 
     private final AgentReleaseCache agentCache;
+    private final AgentReleaseCache zombieBuddyCache;
+    private final ViewpointWorkshop viewpointWorkshop;
     private final Path consoleLog;
     private final BooleanSupplier steamRunning;
 
-    public ProjectZomboidLauncher(Path appDataDirectory, AgentReleaseCache agentCache) {
-        this(appDataDirectory, agentCache, ProjectZomboidLauncher::isSteamRunning);
+    public ProjectZomboidLauncher(Path appDataDirectory, AgentReleaseCache agentCache,
+                                  AgentReleaseCache zombieBuddyCache) {
+        this(appDataDirectory, agentCache, zombieBuddyCache,
+                new ViewpointWorkshop(Path.of(System.getProperty("user.home"), "Zomboid"),
+                        new SteamWorkshopDownloader(appDataDirectory.resolve("steamcmd"))::download),
+                ProjectZomboidLauncher::isSteamRunning);
     }
 
-    ProjectZomboidLauncher(Path appDataDirectory, AgentReleaseCache agentCache, BooleanSupplier steamRunning) {
+    ProjectZomboidLauncher(Path appDataDirectory, AgentReleaseCache agentCache,
+                           AgentReleaseCache zombieBuddyCache, ViewpointWorkshop viewpointWorkshop,
+                           BooleanSupplier steamRunning) {
         this.agentCache = agentCache;
+        this.zombieBuddyCache = zombieBuddyCache;
+        this.viewpointWorkshop = viewpointWorkshop;
         this.consoleLog = appDataDirectory.resolve("project-zomboid-console.log");
         this.steamRunning = steamRunning;
     }
@@ -53,9 +66,13 @@ public final class ProjectZomboidLauncher {
     public record Launch(Process process, Optional<Path> consoleLog) {
     }
 
+    public record WorkshopProgress(Status status, String modName, int position, int total) {
+        public enum Status { PREPARING, CHECKING, VERIFIED, STAGING }
+    }
+
     public static final class SteamNotRunningException extends IOException {
         private SteamNotRunningException() {
-            super("The Steam client must be running to launch Project Zomboid with ApocBR optimizations.");
+            super("The Steam client must be running to launch Project Zomboid with Java agents.");
         }
     }
 
@@ -68,12 +85,14 @@ public final class ProjectZomboidLauncher {
         return Files.isRegularFile(executable32) ? Optional.of(executable32) : Optional.empty();
     }
 
-    public Launch launch(Path directory, Set<ZomboidOptimization> optimizations,
-                         Consumer<AgentReleaseCache.Status> progress) throws IOException, InterruptedException {
+    public Launch launch(Path directory, ZomboidLaunchMode mode, Set<ZomboidOptimization> optimizations,
+                         Consumer<AgentReleaseCache.Progress> progress, Consumer<WorkshopProgress> workshopProgress)
+            throws IOException, InterruptedException {
         Path workingDirectory = directory.toAbsolutePath().normalize();
         Path executable = findExecutable(workingDirectory).orElseThrow(
                 () -> new IOException("Project Zomboid executable was not found in " + workingDirectory));
-        if (optimizations.stream().noneMatch(ZomboidOptimization::availableOnClient)) {
+        boolean viewpoint = mode == ZomboidLaunchMode.VIEWPOINT;
+        if (!viewpoint && optimizations.stream().noneMatch(mode::allowsOptimization)) {
             Process process = new ProcessBuilder(nativeCommand(executable))
                     .directory(workingDirectory.toFile())
                     .redirectOutput(ProcessBuilder.Redirect.DISCARD)
@@ -88,11 +107,15 @@ public final class ProjectZomboidLauncher {
         Path java = workingDirectory.resolve("jre64/bin/javaw.exe");
         Path gameJar = workingDirectory.resolve("projectzomboid.jar");
         if (!Files.isRegularFile(java) || !Files.isRegularFile(gameJar)) {
-            throw new IOException("ApocBR optimizations require the Build 42 game JAR and bundled 64-bit Java runtime.");
+            throw new IOException("Java agents require the Build 42 game JAR and bundled 64-bit Java runtime.");
         }
         List<String> heap = new ZomboidJvmSettings(workingDirectory).heapArguments();
         Path agent = agentCache.resolve(progress);
-        ProcessBuilder builder = new ProcessBuilder(agentCommand(java, gameJar, agent, heap, optimizations))
+        // Install ApocBR transformers before ZombieBuddy preloads game classes.
+        List<Path> agents = viewpoint ? List.of(agent, zombieBuddyCache.resolve(progress)) : List.of(agent);
+        Set<String> workshopJavaHashes = viewpoint ? viewpointWorkshop.synchronize(workshopProgress) : Set.of();
+        ProcessBuilder builder = new ProcessBuilder(
+                agentCommand(java, gameJar, agents, heap, mode, optimizations, workshopJavaHashes))
                 .directory(workingDirectory.toFile())
                 .redirectErrorStream(true)
                 .redirectOutput(consoleLog.toFile());
@@ -116,17 +139,25 @@ public final class ProjectZomboidLauncher {
         return List.of(executable.toString(), STEAM_VM_ARGUMENT, "--");
     }
 
-    static List<String> agentCommand(Path java, Path gameJar, Path agent, List<String> heap,
-                                     Set<ZomboidOptimization> enabled) {
+    static List<String> agentCommand(Path java, Path gameJar, List<Path> agents, List<String> heap,
+                                     ZomboidLaunchMode mode, Set<ZomboidOptimization> enabled,
+                                     Set<String> workshopJavaHashes) {
         List<String> command = new ArrayList<>();
         command.add(java.toString());
         command.addAll(CLIENT_VM_ARGUMENTS);
         command.addAll(heap);
         command.addAll(UNSELECTED_AGENT_FEATURES);
-        for (ZomboidOptimization optimization : ZomboidOptimization.values()) {
-            command.add(optimization.vmArgument(enabled.contains(optimization)));
+        if (mode == ZomboidLaunchMode.VIEWPOINT) {
+            command.add(DISABLE_LUA_TELEMETRY);
+            command.add("-Dapocbr.launcher.template=viewpoint");
+            command.add("-Dapocbr.launcher.viewpoint.java.sha256=" + String.join(",", workshopJavaHashes));
         }
-        command.add("-javaagent:" + agent.toAbsolutePath());
+        for (ZomboidOptimization optimization : ZomboidOptimization.values()) {
+            command.add(optimization.vmArgument(mode.allowsOptimization(optimization) && enabled.contains(optimization)));
+        }
+        for (Path agent : agents) {
+            command.add("-javaagent:" + agent.toAbsolutePath());
+        }
         command.add("-cp");
         command.add(gameJar.toString());
         command.add("zombie.gameStates.MainScreenState");
