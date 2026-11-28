@@ -31,7 +31,7 @@ public enum ZomboidLaunchMode {
                     new ZomboidWorkshopItem("3619862853", "ZombieBuddy", false),
                     new ZomboidWorkshopItem("3809306528", "Viewpoint", true),
                     new ZomboidWorkshopItem("3818189653", "ViewpointVisibleLoot", false),
-                    new ZomboidWorkshopItem("3819018807", "ViewpointRightClick", true),
+                    new ZomboidWorkshopItem("3819018807", "ViewpointRightClick", false),
                     new ZomboidWorkshopItem("3810302175", "PZVoxelStudioViewpoint", false))),
     VIEWPOINT_TREE_FLICKER_PATCH("Viewpoint + Tree Flicker Patch",
             Set.of(ZomboidOptimization.CHARACTER_STATS, ZomboidOptimization.LUA_DISPATCH),
@@ -41,7 +41,7 @@ public enum ZomboidLaunchMode {
                     new ZomboidWorkshopItem("3619862853", "ZombieBuddy", false),
                     new ZomboidWorkshopItem("3809306528", "Viewpoint", true),
                     new ZomboidWorkshopItem("3818189653", "ViewpointVisibleLoot", false),
-                    new ZomboidWorkshopItem("3819018807", "ViewpointRightClick", true),
+                    new ZomboidWorkshopItem("3819018807", "ViewpointRightClick", false),
                     new ZomboidWorkshopItem("3842290180", "ViewpointDisableIsometricUpkeep", true),
                     new ZomboidWorkshopItem("3810302175", "PZVoxelStudioViewpoint", false)));
 
