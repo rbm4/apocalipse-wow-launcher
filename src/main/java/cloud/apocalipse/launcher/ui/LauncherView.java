@@ -135,7 +135,8 @@ public final class LauncherView {
         Task<Void> preparation = new Task<>() {
             @Override
             protected Void call() throws IOException, InterruptedException {
-                installer.prepare(msi, update, language.text("launcherUpdate.failed"), language.text("launcherUpdate.reboot"));
+                installer.prepare(msi, update, language.text("launcherUpdate.failed"), language.text("launcherUpdate.reboot"),
+                        language.text("launcherUpdate.relaunchFailed"));
                 return null;
             }
         };

@@ -47,6 +47,7 @@ public enum AppLanguage {
             case "launcherUpdate.busy" -> "Aguarde a operação do jogo terminar para atualizar o launcher.";
             case "launcherUpdate.failed" -> "Não foi possível instalar a atualização do launcher.";
             case "launcherUpdate.reboot" -> "Reinicie o Windows para concluir a atualização do launcher.";
+            case "launcherUpdate.relaunchFailed" -> "A atualiza??o foi instalada, mas o launcher n?o p?de reabrir. Abra-o pelo menu Iniciar.";
             case "button.chooseGame" -> "Trocar jogo";
             case "button.switchToZomboid" -> "Project Zomboid";
             case "button.switchToWow" -> "World of Warcraft";
@@ -220,6 +221,7 @@ public enum AppLanguage {
             case "launcherUpdate.busy" -> "Wait for the game operation to finish before updating the launcher.";
             case "launcherUpdate.failed" -> "The launcher update could not be installed.";
             case "launcherUpdate.reboot" -> "Restart Windows to finish updating the launcher.";
+            case "launcherUpdate.relaunchFailed" -> "The update was installed, but the launcher could not reopen. Open it from the Start menu.";
             case "window.title" -> "Apocalipse BR Launcher";
             case "button.chooseGame" -> "Switch game";
             case "button.switchToZomboid" -> "Project Zomboid";
@@ -394,6 +396,7 @@ public enum AppLanguage {
             case "launcherUpdate.busy" -> "Espera a que termine la operación del juego para actualizar el launcher.";
             case "launcherUpdate.failed" -> "No se pudo instalar la actualización del launcher.";
             case "launcherUpdate.reboot" -> "Reinicia Windows para completar la actualización del launcher.";
+            case "launcherUpdate.relaunchFailed" -> "La actualizaci?n se instal?, pero el launcher no pudo volver a abrirse. ?brelo desde el men? Inicio.";
             case "window.title" -> "Apocalipse BR Launcher";
             case "button.chooseGame" -> "Cambiar juego";
             case "button.switchToZomboid" -> "Project Zomboid";

@@ -190,7 +190,9 @@ class AgentReleaseCacheTest {
         assertEquals(List.of(List.of("3619862853"),
                 List.of("3619862853", "3809306528", "3810302175"),
                 List.of("3619862853", "3809306528", "3818189653", "3810302175"),
-                List.of("3619862853", "3809306528", "3818189653", "3819018807", "3810302175")), requestedItems);
+                List.of("3619862853", "3809306528", "3818189653", "3819018807", "3810302175"),
+                List.of("3619862853", "3809306528", "3818189653", "3819018807", "3842290180", "3810302175")),
+                requestedItems);
         assertFalse(Files.exists(directory.resolve("project-zomboid-console.log")));
     }
 

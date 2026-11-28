@@ -2,6 +2,7 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 $env:PSModulePath = [IO.Path]::Combine($PSHOME, 'Modules')
 $ready = $false
+$installed = $false
 $lock = $null
 $package = $null
 
@@ -89,19 +90,35 @@ try {
     if ($result.ExitCode -ne 0) {
         throw "Windows Installer failed with exit code $($result.ExitCode)."
     }
+    $installed = $true
     $package.Dispose()
     $package = $null
     Remove-Item -LiteralPath $msi -ErrorAction SilentlyContinue
-    $installDirectory = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) $properties.ProductName
-    $installedExecutable = Join-Path $installDirectory ($properties.ProductName + '.exe')
-    if (-not (Test-Path -LiteralPath $installedExecutable -PathType Leaf)) {
+
+    $executableName = $properties.ProductName + '.exe'
+    $installDirectory = [IO.Path]::GetDirectoryName($env:APOC_UPDATE_EXE)
+    $installedExecutable = [IO.Path]::Combine($installDirectory, $executableName)
+    if (-not [IO.File]::Exists($installedExecutable)) {
+        $installDirectory = [IO.Path]::Combine([Environment]::GetFolderPath('ProgramFiles'), $properties.ProductName)
+        $installedExecutable = [IO.Path]::Combine($installDirectory, $executableName)
+    }
+    if (-not [IO.File]::Exists($installedExecutable)) {
         throw "Updated launcher executable was not found: $installedExecutable"
     }
-    Start-Process -FilePath $installedExecutable -WorkingDirectory $installDirectory
+
+    # Use the literal filesystem path. PowerShell path resolution treats [BR] as a wildcard.
+    $startInfo = New-Object Diagnostics.ProcessStartInfo
+    $startInfo.FileName = $installedExecutable
+    $startInfo.WorkingDirectory = $installDirectory
+    $startInfo.UseShellExecute = $false
+    $launcher = [Diagnostics.Process]::Start($startInfo)
+    $launcher.Dispose()
+    Write-Output "Reopened the updated launcher: $installedExecutable"
 } catch {
-    Write-Output $_.Exception.Message
+    Write-Output $_.Exception.ToString()
     if ($ready) {
-        Show-UpdateMessage ($env:APOC_UPDATE_FAILURE + [Environment]::NewLine + (Get-Location).Path)
+        $message = if ($installed) { $env:APOC_UPDATE_RELAUNCH_FAILURE } else { $env:APOC_UPDATE_FAILURE }
+        Show-UpdateMessage ($message + [Environment]::NewLine + (Get-Location).Path)
     }
     exit 1
 } finally {

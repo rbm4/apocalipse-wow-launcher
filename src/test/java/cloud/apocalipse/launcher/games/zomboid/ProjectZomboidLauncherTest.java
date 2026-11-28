@@ -54,6 +54,10 @@ class ProjectZomboidLauncherTest {
         List<String> rightClick = ProjectZomboidLauncher.agentCommand(
                 java, game, List.of(agent, zombieBuddy), heap, ZomboidLaunchMode.VIEWPOINT_RIGHT_CLICK, selected,
                 Set.of("Viewpoint:3809306528:" + viewpointHash));
+        String treePatchApproval = "ViewpointDisableIsometricUpkeep:3842290180:" + "b".repeat(64);
+        List<String> treePatch = ProjectZomboidLauncher.agentCommand(
+                java, game, List.of(agent, zombieBuddy), heap, ZomboidLaunchMode.VIEWPOINT_TREE_FLICKER_PATCH, selected,
+                Set.of("Viewpoint:3809306528:" + viewpointHash, treePatchApproval));
         List<String> standard = ProjectZomboidLauncher.agentCommand(
                 java, game, List.of(agent, zombieBuddy), heap, ZomboidLaunchMode.STANDARD, selected, Set.of());
 
@@ -73,6 +77,11 @@ class ProjectZomboidLauncherTest {
         assertTrue(visibleLoot.containsAll(VIEWPOINT_OVERRIDES));
         assertTrue(rightClick.contains("-Dapocbr.launcher.mods=ZombieBuddy,APOCALISEBR_PACK,Viewpoint,ViewpointVisibleLoot,ViewpointRightClick,PZVoxelStudioViewpoint"));
         assertTrue(rightClick.containsAll(VIEWPOINT_OVERRIDES));
+        assertTrue(treePatch.contains("-Dapocbr.launcher.mods=ZombieBuddy,APOCALISEBR_PACK,Viewpoint,ViewpointVisibleLoot,"
+                + "ViewpointRightClick,ViewpointDisableIsometricUpkeep,PZVoxelStudioViewpoint"));
+        assertTrue(treePatch.contains("-Dapocbr.launcher.java.approvals=Viewpoint:3809306528:"
+                + viewpointHash + "," + treePatchApproval));
+        assertTrue(treePatch.containsAll(VIEWPOINT_OVERRIDES));
         assertTrue(standard.contains("-Dapocbr.launcher.mods=ZombieBuddy,APOCALISEBR_PACK"));
         assertTrue(viewpointVmArgs.contains("-Dapocbr.launcher.java.approvals=Viewpoint:3809306528:" + viewpointHash));
         assertFalse(viewpointVmArgs.stream().anyMatch(arg -> arg.startsWith("-Dapocbr.launcher.template=")));

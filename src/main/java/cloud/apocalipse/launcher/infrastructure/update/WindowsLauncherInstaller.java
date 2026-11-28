@@ -42,7 +42,8 @@ public final class WindowsLauncherInstaller {
         return Optional.of(new WindowsLauncherInstaller(executable.get(), publisherSha256));
     }
 
-    public void prepare(Path msi, LauncherReleases.Update update, String failureMessage, String rebootMessage)
+    public void prepare(Path msi, LauncherReleases.Update update, String failureMessage, String rebootMessage,
+                        String relaunchFailureMessage)
             throws IOException, InterruptedException {
         String command;
         try (var script = WindowsLauncherInstaller.class.getResourceAsStream("/launcher-update.ps1")) {
@@ -69,6 +70,7 @@ public final class WindowsLauncherInstaller {
         environment.put("APOC_UPDATE_PID", Long.toString(ProcessHandle.current().pid()));
         environment.put("APOC_UPDATE_FAILURE", failureMessage);
         environment.put("APOC_UPDATE_REBOOT", rebootMessage);
+        environment.put("APOC_UPDATE_RELAUNCH_FAILURE", relaunchFailureMessage);
         Process helper = builder.start();
         long deadline = System.nanoTime() + Duration.ofSeconds(45).toNanos();
         try {
