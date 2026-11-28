@@ -10,7 +10,7 @@ Detection runs in the background and saves the result in `project-zomboid.proper
 
 The home tab shows the current season (Season 5) and points players to **Opções** to enable the optional Apocalipse BR features. Its status widget uses the same 320 × 200 viewport as the WoW realm status.
 
-**Atualizar e Jogar** becomes available after saving a Project Zomboid installation folder. The launch selector offers **Padr?o**, **Viewpoint**, **Viewpoint Visible Loot**, **Viewpoint Visible Loot + Right Click Fix**, and **Viewpoint + Tree Flicker Patch**. Each launcher session starts in **Padr?o**. All modes use the Build 42 game JAR and bundled 64-bit Java runtime with Steam enabled. The action stays disabled until the game exits.
+**Atualizar e Jogar** becomes available after saving a Project Zomboid installation folder. The launch selector offers **Padr?o**, **Viewpoint**, **Viewpoint Visible Loot**, **Viewpoint Visible Loot + Right Click Fix**, **Viewpoint + Tree Flicker Patch**, and **Viewpoint + Immersive Driving**. Each launcher session starts in **Padr?o**. All modes use the Build 42 game JAR and bundled 64-bit Java runtime with Steam enabled. The action stays disabled until the game exits.
 
 Use **Ver detalhes** on the home tab to see the timestamped launch log. Launch failures open the log automatically. **Status do Servidor** embeds the TrackyServer widget for **APOCALIPSE [BR]**.
 
@@ -54,6 +54,7 @@ The selected mode defines which Workshop items SteamCMD downloads anonymously an
 | Viewpoint Visible Loot | ZombieBuddy (`3619862853`), Viewpoint (`3809306528`), ViewpointVisibleLoot (`3818189653`), PZVoxelStudioViewpoint (`3810302175`) |
 | Viewpoint Visible Loot + Right Click Fix | All Viewpoint Visible Loot items plus ViewpointRightClick (`3819018807`) |
 | Viewpoint + Tree Flicker Patch | All items from the Right Click Fix profile plus ViewpointDisableIsometricUpkeep (`3842290180`, Java) |
+| Viewpoint + Immersive Driving | All items from the Tree Flicker Patch profile plus ImmersiveDriving (`3817413313`, Java) |
 
 The Tree Flicker Patch requires Project Zomboid 42.22. Its published metadata pins ZombieBuddy to 2.3.4, but the updated ZombieBuddy fork accepts the launcher-verified copy through its 2.x compatibility layer. Player-installed copies still follow the published version range.
 
