@@ -142,6 +142,16 @@ class ViewpointWorkshopTest {
         assertEquals("id=3819018807\n", Files.readString(mods.resolve("ViewpointRightClick/workshop.txt")));
         assertEquals(Set.of("Viewpoint:3809306528:" + FileHashes.sha256(
                 mods.resolve("Viewpoint/42/media/java/client/Viewpoint.jar"))), approvals);
+
+        Files.writeString(rightClick.resolve("42/mod.info"),
+                "id=ViewpointRightClick\nrequire=Viewpoint\njavaJarFile=media/java/RightClick.jar\n");
+        Path rightClickJar = rightClick.resolve("42/media/java/RightClick.jar");
+        Files.createDirectories(rightClickJar.getParent());
+        Files.writeString(rightClickJar, "right click Java fixture");
+        assertEquals(Set.of("Viewpoint:3809306528:" + FileHashes.sha256(
+                mods.resolve("Viewpoint/42/media/java/client/Viewpoint.jar")),
+                "ViewpointRightClick:3819018807:" + FileHashes.sha256(rightClickJar)),
+                extendedWorkshop.synchronize(ignored -> {}, ZomboidLaunchMode.VIEWPOINT_RIGHT_CLICK));
     }
 
     @Test

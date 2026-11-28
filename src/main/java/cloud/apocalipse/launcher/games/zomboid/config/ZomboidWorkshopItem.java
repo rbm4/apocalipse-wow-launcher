@@ -11,7 +11,7 @@ import java.util.regex.Pattern;
 
 import cloud.apocalipse.launcher.core.FileHashes;
 
-public record ZomboidWorkshopItem(String id, String modId, boolean isJava) {
+public record ZomboidWorkshopItem(String id, String modId, boolean requiresJavaJar) {
     private static final Pattern MANIFEST_VALUE = Pattern.compile("\"manifest\"\\s+\"([0-9]+)\"");
     private static final Pattern JAVA_MOD = Pattern.compile("javaJarFile[0-9]*=(.+)", Pattern.CASE_INSENSITIVE);
 
@@ -32,6 +32,7 @@ public record ZomboidWorkshopItem(String id, String modId, boolean isJava) {
             directories = files.filter(path -> Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)).toList();
         }
         boolean foundMetadata = false;
+        boolean declaresJavaJar = false;
         var hashes = new LinkedHashSet<String>();
         Path realMod = mod.toRealPath();
         for (Path directory : directories) {
@@ -44,23 +45,22 @@ public record ZomboidWorkshopItem(String id, String modId, boolean isJava) {
                 continue;
             }
             foundMetadata = true;
-            if (!isJava) {
-                return Set.of();
-            }
-            collectJavaHashes(mod, realMod, directories, lines, hashes);
+            declaresJavaJar |= collectJavaHashes(mod, realMod, directories, lines, hashes);
         }
-        if (!hashes.isEmpty()) {
+        if (foundMetadata && (!hashes.isEmpty() || (!requiresJavaJar && !declaresJavaJar))) {
             return hashes;
         }
         String missing = foundMetadata ? " its declared Java mod JAR." : " mod.info for " + modId + ".";
         throw new IOException("Workshop item " + id + " is missing" + missing);
     }
 
-    private static void collectJavaHashes(Path mod, Path realMod, List<Path> directories,
+    private static boolean collectJavaHashes(Path mod, Path realMod, List<Path> directories,
             List<String> lines, Set<String> hashes) throws IOException {
+        boolean declaresJavaJar = false;
         for (String line : lines) {
             var jar = JAVA_MOD.matcher(line);
             if (jar.matches()) {
+                declaresJavaJar = true;
                 for (Path directory : directories) {
                     Path candidate = directory.resolve(jar.group(1).strip()).normalize();
                     if (candidate.startsWith(mod) && Files.isRegularFile(candidate, LinkOption.NOFOLLOW_LINKS)) {
@@ -72,5 +72,6 @@ public record ZomboidWorkshopItem(String id, String modId, boolean isJava) {
                 }
             }
         }
+        return declaresJavaJar;
     }
 }
