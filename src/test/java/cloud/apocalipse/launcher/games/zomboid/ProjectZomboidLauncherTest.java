@@ -25,17 +25,9 @@ class ProjectZomboidLauncherTest {
             "-Dapocbr.lua.enabled=false");
 
     @Test
-    void nativeLaunchPassesSteamModeAsAJvmOption() {
-        Path executable = Path.of("Project Zomboid", "ProjectZomboid64.exe");
-
-        assertEquals(List.of(executable.toString(), "-Dzomboid.steam=1", "--"),
-                ProjectZomboidLauncher.nativeCommand(executable));
-    }
-
-    @Test
     void optimizedLaunchEnablesSteamBeforeStartingTheGameMainClass() {
         List<String> command = ProjectZomboidLauncher.agentCommand(Path.of("javaw.exe"),
-                Path.of("projectzomboid.jar"), List.of(Path.of("apocbr-agent.jar")), List.of("-Xmx8G"),
+                Path.of("projectzomboid.jar"), List.of(Path.of("apocbr-agent.jar"), Path.of("ZombieBuddy.jar")), List.of("-Xmx8G"),
                 ZomboidLaunchMode.STANDARD, Set.of(ZomboidOptimization.CLIENT_CHUNK_MAP), Set.of());
 
         assertTrue(command.subList(1, command.indexOf("-cp")).contains("-Dzomboid.steam=1"));
@@ -55,14 +47,20 @@ class ProjectZomboidLauncherTest {
 
         List<String> viewpoint = ProjectZomboidLauncher.agentCommand(
                 java, game, List.of(agent, zombieBuddy), heap, ZomboidLaunchMode.VIEWPOINT, selected,
-                Set.of(viewpointHash));
+                Set.of("Viewpoint:3809306528:" + viewpointHash));
+        List<String> visibleLoot = ProjectZomboidLauncher.agentCommand(
+                java, game, List.of(agent, zombieBuddy), heap, ZomboidLaunchMode.VIEWPOINT_VISIBLE_LOOT, selected,
+                Set.of("Viewpoint:3809306528:" + viewpointHash));
+        List<String> rightClick = ProjectZomboidLauncher.agentCommand(
+                java, game, List.of(agent, zombieBuddy), heap, ZomboidLaunchMode.VIEWPOINT_RIGHT_CLICK, selected,
+                Set.of("Viewpoint:3809306528:" + viewpointHash));
         List<String> standard = ProjectZomboidLauncher.agentCommand(
-                java, game, List.of(agent), heap, ZomboidLaunchMode.STANDARD, selected, Set.of());
+                java, game, List.of(agent, zombieBuddy), heap, ZomboidLaunchMode.STANDARD, selected, Set.of());
 
         List<String> viewpointVmArgs = viewpoint.subList(1, viewpoint.indexOf("-cp"));
         assertEquals(List.of("-javaagent:" + agent.toAbsolutePath(), "-javaagent:" + zombieBuddy.toAbsolutePath()),
                 viewpointVmArgs.stream().filter(argument -> argument.startsWith("-javaagent:")).toList());
-        assertEquals(List.of("-javaagent:" + agent.toAbsolutePath()),
+        assertEquals(List.of("-javaagent:" + agent.toAbsolutePath(), "-javaagent:" + zombieBuddy.toAbsolutePath()),
                 standard.stream().filter(argument -> argument.startsWith("-javaagent:")).toList());
         for (String override : VIEWPOINT_OVERRIDES) {
             String property = override.substring(0, override.indexOf('=') + 1);
@@ -70,9 +68,14 @@ class ProjectZomboidLauncherTest {
                     .filter(argument -> argument.startsWith(property)).toList());
         }
         assertTrue(viewpointVmArgs.contains("-Dapocbr.optimization.clientChunkMap.enabled=true"));
-        assertTrue(viewpointVmArgs.contains("-Dapocbr.launcher.template=viewpoint"));
-        assertTrue(viewpointVmArgs.contains("-Dapocbr.launcher.viewpoint.java.sha256=" + viewpointHash));
-        assertFalse(standard.contains("-Dapocbr.launcher.template=viewpoint"));
+        assertTrue(viewpointVmArgs.contains("-Dapocbr.launcher.mods=ZombieBuddy,APOCALISEBR_PACK,Viewpoint,PZVoxelStudioViewpoint"));
+        assertTrue(visibleLoot.contains("-Dapocbr.launcher.mods=ZombieBuddy,APOCALISEBR_PACK,Viewpoint,ViewpointVisibleLoot,PZVoxelStudioViewpoint"));
+        assertTrue(visibleLoot.containsAll(VIEWPOINT_OVERRIDES));
+        assertTrue(rightClick.contains("-Dapocbr.launcher.mods=ZombieBuddy,APOCALISEBR_PACK,Viewpoint,ViewpointVisibleLoot,ViewpointRightClick,PZVoxelStudioViewpoint"));
+        assertTrue(rightClick.containsAll(VIEWPOINT_OVERRIDES));
+        assertTrue(standard.contains("-Dapocbr.launcher.mods=ZombieBuddy,APOCALISEBR_PACK"));
+        assertTrue(viewpointVmArgs.contains("-Dapocbr.launcher.java.approvals=Viewpoint:3809306528:" + viewpointHash));
+        assertFalse(viewpointVmArgs.stream().anyMatch(arg -> arg.startsWith("-Dapocbr.launcher.template=")));
         assertTrue(standard.contains("-Dapocbr.optimization.characterStats.enabled=true"));
         assertTrue(standard.contains("-Dapocbr.optimization.luaDispatch.enabled=true"));
         assertFalse(standard.contains("-Dapocbr.telemetry.lua.enabled=false"));

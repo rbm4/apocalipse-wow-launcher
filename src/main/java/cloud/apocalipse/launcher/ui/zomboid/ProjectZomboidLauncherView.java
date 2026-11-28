@@ -180,7 +180,7 @@ public final class ProjectZomboidLauncherView {
     }
 
     private String launchModeLabel(ZomboidLaunchMode mode) {
-        return mode == ZomboidLaunchMode.VIEWPOINT ? "Viewpoint" : language.text("profile.default");
+        return mode == ZomboidLaunchMode.STANDARD ? language.text("profile.default") : mode.displayName();
     }
 
     private Node serverStatusPanel() {

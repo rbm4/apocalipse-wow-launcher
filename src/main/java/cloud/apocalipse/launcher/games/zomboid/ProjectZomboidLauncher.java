@@ -89,18 +89,8 @@ public final class ProjectZomboidLauncher {
                          Consumer<AgentReleaseCache.Progress> progress, Consumer<WorkshopProgress> workshopProgress)
             throws IOException, InterruptedException {
         Path workingDirectory = directory.toAbsolutePath().normalize();
-        Path executable = findExecutable(workingDirectory).orElseThrow(
+        findExecutable(workingDirectory).orElseThrow(
                 () -> new IOException("Project Zomboid executable was not found in " + workingDirectory));
-        boolean viewpoint = mode == ZomboidLaunchMode.VIEWPOINT;
-        if (!viewpoint && optimizations.stream().noneMatch(mode::allowsOptimization)) {
-            Process process = new ProcessBuilder(nativeCommand(executable))
-                    .directory(workingDirectory.toFile())
-                    .redirectOutput(ProcessBuilder.Redirect.DISCARD)
-                    .redirectError(ProcessBuilder.Redirect.DISCARD)
-                    .start();
-            return new Launch(process, Optional.empty());
-        }
-
         if (!steamRunning.getAsBoolean()) {
             throw new SteamNotRunningException();
         }
@@ -112,10 +102,10 @@ public final class ProjectZomboidLauncher {
         List<String> heap = new ZomboidJvmSettings(workingDirectory).heapArguments();
         Path agent = agentCache.resolve(progress);
         // Install ApocBR transformers before ZombieBuddy preloads game classes.
-        List<Path> agents = viewpoint ? List.of(agent, zombieBuddyCache.resolve(progress)) : List.of(agent);
-        Set<String> workshopJavaHashes = viewpoint ? viewpointWorkshop.synchronize(workshopProgress) : Set.of();
+        List<Path> agents = List.of(agent, zombieBuddyCache.resolve(progress));
+        Set<String> workshopJavaApprovals = viewpointWorkshop.synchronize(workshopProgress, mode);
         ProcessBuilder builder = new ProcessBuilder(
-                agentCommand(java, gameJar, agents, heap, mode, optimizations, workshopJavaHashes))
+                agentCommand(java, gameJar, agents, heap, mode, optimizations, workshopJavaApprovals))
                 .directory(workingDirectory.toFile())
                 .redirectErrorStream(true)
                 .redirectOutput(consoleLog.toFile());
@@ -134,24 +124,19 @@ public final class ProjectZomboidLauncher {
         }
     }
 
-    static List<String> nativeCommand(Path executable) {
-        // The native launcher treats arguments before -- as JVM options.
-        return List.of(executable.toString(), STEAM_VM_ARGUMENT, "--");
-    }
-
     static List<String> agentCommand(Path java, Path gameJar, List<Path> agents, List<String> heap,
                                      ZomboidLaunchMode mode, Set<ZomboidOptimization> enabled,
-                                     Set<String> workshopJavaHashes) {
+                                     Set<String> workshopJavaApprovals) {
         List<String> command = new ArrayList<>();
         command.add(java.toString());
         command.addAll(CLIENT_VM_ARGUMENTS);
         command.addAll(heap);
         command.addAll(UNSELECTED_AGENT_FEATURES);
-        if (mode == ZomboidLaunchMode.VIEWPOINT) {
+        if (mode != ZomboidLaunchMode.STANDARD) {
             command.add(DISABLE_LUA_TELEMETRY);
-            command.add("-Dapocbr.launcher.template=viewpoint");
-            command.add("-Dapocbr.launcher.viewpoint.java.sha256=" + String.join(",", workshopJavaHashes));
         }
+        command.add("-Dapocbr.launcher.mods=" + String.join(",", mode.properties().carriedMods()));
+        command.add("-Dapocbr.launcher.java.approvals=" + String.join(",", workshopJavaApprovals.stream().sorted().toList()));
         for (ZomboidOptimization optimization : ZomboidOptimization.values()) {
             command.add(optimization.vmArgument(mode.allowsOptimization(optimization) && enabled.contains(optimization)));
         }

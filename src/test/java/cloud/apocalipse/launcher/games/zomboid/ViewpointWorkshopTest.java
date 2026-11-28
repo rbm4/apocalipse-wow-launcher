@@ -2,6 +2,7 @@ package cloud.apocalipse.launcher.games.zomboid;
 
 import cloud.apocalipse.launcher.games.zomboid.ProjectZomboidLauncher.WorkshopProgress;
 import cloud.apocalipse.launcher.core.FileHashes;
+import cloud.apocalipse.launcher.games.zomboid.config.ZomboidLaunchMode;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -92,7 +93,7 @@ class ViewpointWorkshopTest {
     @Test
     void reportsEachModBeforeStagingAndReusesTheExistingStageWithoutAnInstallMessage() throws Exception {
         var events = new ArrayList<WorkshopProgress>();
-        workshop.synchronize(events::add);
+        workshop.synchronize(events::add, ZomboidLaunchMode.VIEWPOINT);
         assertEquals(List.of(
                 new WorkshopProgress(WorkshopProgress.Status.PREPARING, "Viewpoint", 0, 3),
                 new WorkshopProgress(WorkshopProgress.Status.CHECKING, "Apocalipse [BR] ZombieBuddy", 1, 3),
@@ -104,13 +105,13 @@ class ViewpointWorkshopTest {
                 new WorkshopProgress(WorkshopProgress.Status.STAGING, "Viewpoint", 3, 3)), events);
 
         events.clear();
-        workshop.synchronize(events::add);
+        workshop.synchronize(events::add, ZomboidLaunchMode.VIEWPOINT);
         assertEquals(WorkshopProgress.Status.VERIFIED, events.getLast().status());
     }
 
     @Test
-    void stagesAllThreeItemsWithTheirOwnWorkshopIdsAndReusesMatchingManifest() throws Exception {
-        workshop.synchronize(ignored -> {});
+    void stagesProfileItemsWithTheirOwnWorkshopIdsAndReusesMatchingManifest() throws Exception {
+        workshop.synchronize(ignored -> {}, ZomboidLaunchMode.VIEWPOINT);
 
         Path mods = staged.resolve("Contents/mods");
         assertEquals("id=3619862853\n", Files.readString(mods.resolve("ZombieBuddy/workshop.txt")));
@@ -120,13 +121,27 @@ class ViewpointWorkshopTest {
         assertTrue(Files.isRegularFile(mods.resolve("Viewpoint/42/media/java/client/Viewpoint.jar")));
         Files.writeString(modelMod.resolve("asset.txt"), "updated");
 
-        workshop.synchronize(ignored -> {});
+        workshop.synchronize(ignored -> {}, ZomboidLaunchMode.VIEWPOINT);
         assertFalse(Files.exists(mods.resolve("PZVoxelStudioViewpoint/asset.txt")));
 
         writeManifests("4");
-        workshop.synchronize(ignored -> {});
+        workshop.synchronize(ignored -> {}, ZomboidLaunchMode.VIEWPOINT);
         assertEquals("updated", Files.readString(mods.resolve("PZVoxelStudioViewpoint/asset.txt")));
         assertFalse(Files.exists(cache.resolve("apocalipse-viewpoint-previous")));
+
+        createMod("3818189653", "ViewpointVisibleLoot", "42");
+        Path rightClick = createMod("3819018807", "ViewpointRightClick", "42");
+        Files.writeString(rightClick.resolve("42/mod.info"), "id=ViewpointRightClick\nrequire=Viewpoint\n");
+        var extendedWorkshop = new ViewpointWorkshop(cache, (ids, progress) -> {
+            assertEquals(List.of("3619862853", "3809306528", "3818189653", "3819018807", "3810302175"), ids);
+            return content;
+        });
+
+        var approvals = extendedWorkshop.synchronize(ignored -> {}, ZomboidLaunchMode.VIEWPOINT_RIGHT_CLICK);
+
+        assertEquals("id=3819018807\n", Files.readString(mods.resolve("ViewpointRightClick/workshop.txt")));
+        assertEquals(Set.of("Viewpoint:3809306528:" + FileHashes.sha256(
+                mods.resolve("Viewpoint/42/media/java/client/Viewpoint.jar"))), approvals);
     }
 
     @Test
@@ -134,23 +149,24 @@ class ViewpointWorkshopTest {
         String javaMod = "Viewpoint/42/media/java/client/Viewpoint.jar";
         Path source = content.resolve("3809306528/mods").resolve(javaMod);
         Path installed = staged.resolve("Contents/mods").resolve(javaMod);
-        var approvedHashes = Set.of(FileHashes.sha256(source));
+        String approvedHash = FileHashes.sha256(source);
+        var approvals = Set.of("Viewpoint:3809306528:" + approvedHash);
 
-        assertEquals(approvedHashes, workshop.synchronize(ignored -> {}));
+        assertEquals(approvals, workshop.synchronize(ignored -> {}, ZomboidLaunchMode.VIEWPOINT));
         Files.writeString(installed, "modified after staging");
-        assertFalse(approvedHashes.contains(FileHashes.sha256(installed)));
+        assertFalse(approvedHash.equals(FileHashes.sha256(installed)));
 
-        assertEquals(approvedHashes, workshop.synchronize(ignored -> {}));
-        assertTrue(approvedHashes.contains(FileHashes.sha256(installed)));
+        assertEquals(approvals, workshop.synchronize(ignored -> {}, ZomboidLaunchMode.VIEWPOINT));
+        assertEquals(approvedHash, FileHashes.sha256(installed));
     }
 
     @Test
     void preservesThePreviousTemplateWhenAnUpdatedPackageIsIncomplete() throws Exception {
-        workshop.synchronize(ignored -> {});
+        workshop.synchronize(ignored -> {}, ZomboidLaunchMode.VIEWPOINT);
         writeManifests("4");
         Files.delete(modelMod.resolve("42.20.4/mod.info"));
 
-        assertThrows(IOException.class, () -> workshop.synchronize(ignored -> {}));
+        assertThrows(IOException.class, () -> workshop.synchronize(ignored -> {}, ZomboidLaunchMode.VIEWPOINT));
         assertTrue(Files.readString(staged.resolve("launcher-workshop-manifests.txt")).contains("3810302175=3"));
         assertTrue(Files.isRegularFile(staged.resolve("Contents/mods/PZVoxelStudioViewpoint/42.20.4/mod.info")));
     }
@@ -160,7 +176,7 @@ class ViewpointWorkshopTest {
         Files.createDirectories(staged);
         Files.writeString(staged.resolve("workshop.txt"), "user content");
 
-        assertThrows(IOException.class, () -> workshop.synchronize(ignored -> {}));
+        assertThrows(IOException.class, () -> workshop.synchronize(ignored -> {}, ZomboidLaunchMode.VIEWPOINT));
         assertEquals("user content", Files.readString(staged.resolve("workshop.txt")));
     }
 
@@ -180,6 +196,8 @@ class ViewpointWorkshopTest {
                         "3619862853" { "manifest" "1" }
                         "3809306528" { "manifest" "2" }
                         "3810302175" { "manifest" "%s" }
+                        "3818189653" { "manifest" "5" }
+                        "3819018807" { "manifest" "6" }
                     }
                 }
                 """.formatted(modelsManifest));

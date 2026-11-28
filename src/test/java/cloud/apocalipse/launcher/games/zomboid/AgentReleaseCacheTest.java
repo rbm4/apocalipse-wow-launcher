@@ -1,7 +1,6 @@
 package cloud.apocalipse.launcher.games.zomboid;
 
 import cloud.apocalipse.launcher.games.zomboid.config.ZomboidLaunchMode;
-import cloud.apocalipse.launcher.games.zomboid.config.ZomboidOptimization;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
@@ -159,31 +158,39 @@ class AgentReleaseCacheTest {
 
         progress.clear();
         assertThrows(IOException.class, () -> launcher.launch(installation, ZomboidLaunchMode.STANDARD,
-                Set.of(ZomboidOptimization.CLIENT_CHUNK_MAP), progress::add, ignored -> {}));
+                Set.of(), progress::add, ignored -> {}));
         assertTrue(progress.stream().anyMatch(update -> update.agent() == APOCBR && update.status() == VERIFIED));
-        assertEquals(1, buddyChecks.get());
+        assertEquals(2, buddyChecks.get());
     }
 
     @Test
-    void viewpointRunsWorkshopSynchronizationAfterVerifyingBothAgents() throws Exception {
+    void selectedProfileRunsWorkshopSynchronizationAfterVerifyingBothAgents() throws Exception {
         Path installation = Files.createDirectory(directory.resolve("game"));
         Files.createFile(installation.resolve("ProjectZomboid64.exe"));
         Files.createFile(installation.resolve("projectzomboid.jar"));
         Files.createFile(Files.createDirectories(installation.resolve("jre64/bin")).resolve("javaw.exe"));
         var progress = new ArrayList<AgentReleaseCache.Progress>();
+        var requestedItems = new ArrayList<List<String>>();
         var workshop = new ViewpointWorkshop(directory.resolve("user-game"), (ids, event) -> {
-            assertEquals(List.of("3619862853", "3809306528", "3810302175"), ids);
+            requestedItems.add(List.copyOf(ids));
             throw new IOException("Workshop unavailable");
         });
         var launcher = new ProjectZomboidLauncher(directory, apocbr, buddy, workshop, () -> true);
 
-        IOException failure = assertThrows(IOException.class,
-                () -> launcher.launch(installation, ZomboidLaunchMode.VIEWPOINT, Set.of(), progress::add,
-                        workshopEvent -> assertEquals(List.of(APOCBR, ZOMBIE_BUDDY), progress.stream()
-                                .filter(event -> event.status() == VERIFIED)
-                                .map(AgentReleaseCache.Progress::agent).toList())));
+        for (ZomboidLaunchMode mode : ZomboidLaunchMode.values()) {
+            progress.clear();
+            IOException failure = assertThrows(IOException.class,
+                    () -> launcher.launch(installation, mode, Set.of(), progress::add,
+                            workshopEvent -> assertEquals(List.of(APOCBR, ZOMBIE_BUDDY), progress.stream()
+                                    .filter(event -> event.status() == VERIFIED)
+                                    .map(AgentReleaseCache.Progress::agent).toList())));
+            assertEquals("Workshop unavailable", failure.getMessage());
+        }
 
-        assertEquals("Workshop unavailable", failure.getMessage());
+        assertEquals(List.of(List.of("3619862853"),
+                List.of("3619862853", "3809306528", "3810302175"),
+                List.of("3619862853", "3809306528", "3818189653", "3810302175"),
+                List.of("3619862853", "3809306528", "3818189653", "3819018807", "3810302175")), requestedItems);
         assertFalse(Files.exists(directory.resolve("project-zomboid-console.log")));
     }
 
@@ -203,7 +210,7 @@ class AgentReleaseCacheTest {
             if (ZOMBIE_BUDDY_PREMAIN.equals(premain)) {
                 jar.putNextEntry(new JarEntry("me/zed_0xff/zombie_buddy/LauncherModTemplate.class"));
                 jar.closeEntry();
-                jar.putNextEntry(new JarEntry("me/zed_0xff/zombie_buddy/LauncherModTrust.class"));
+                jar.putNextEntry(new JarEntry("me/zed_0xff/zombie_buddy/LauncherModTrust$Approval.class"));
                 jar.closeEntry();
             }
         }

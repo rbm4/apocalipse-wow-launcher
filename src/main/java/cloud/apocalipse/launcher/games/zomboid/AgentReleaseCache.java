@@ -158,7 +158,7 @@ public final class AgentReleaseCache {
             }
             if (agent == Agent.ZOMBIE_BUDDY
                     && (jar.getJarEntry("me/zed_0xff/zombie_buddy/LauncherModTemplate.class") == null
-                        || jar.getJarEntry("me/zed_0xff/zombie_buddy/LauncherModTrust.class") == null)) {
+                        || jar.getJarEntry("me/zed_0xff/zombie_buddy/LauncherModTrust$Approval.class") == null)) {
                 throw new IOException("A versão publicada do " + agent.displayName()
                         + " ainda não aceita a aprovação de mods pelo launcher.");
             }

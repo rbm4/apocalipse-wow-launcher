@@ -1,8 +1,9 @@
 package cloud.apocalipse.launcher.games.zomboid;
 
-import cloud.apocalipse.launcher.core.FileHashes;
 import cloud.apocalipse.launcher.games.zomboid.ProjectZomboidLauncher.WorkshopProgress;
 import cloud.apocalipse.launcher.games.zomboid.ProjectZomboidLauncher.WorkshopProgress.Status;
+import cloud.apocalipse.launcher.games.zomboid.config.ZomboidLaunchMode;
+import cloud.apocalipse.launcher.games.zomboid.config.ZomboidWorkshopItem;
 
 import java.io.IOException;
 import java.nio.channels.FileChannel;
@@ -18,17 +19,12 @@ import java.util.List;
 import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
-import java.util.regex.Pattern;
 
 final class ViewpointWorkshop {
     private static final String STAGE_NAME = "Apocalipse Launcher - Viewpoint";
     private static final String MANIFESTS = "launcher-workshop-manifests.txt";
     private static final String ZOMBIE_BUDDY_ID = "ZombieBuddy";
     private static final String ZOMBIE_BUDDY_NAME = AgentReleaseCache.Agent.ZOMBIE_BUDDY.displayName();
-    private static final Pattern MANIFEST_VALUE = Pattern.compile("\"manifest\"\\s+\"([0-9]+)\"");
-    private static final Pattern JAVA_MOD = Pattern.compile("javaJarFile[0-9]*=(.+)", Pattern.CASE_INSENSITIVE);
-    private static final List<Item> ITEMS = List.of(new Item("3619862853", ZOMBIE_BUDDY_ID, false),
-            new Item("3809306528", "Viewpoint", true), new Item("3810302175", "PZVoxelStudioViewpoint", false));
     private final Path gameCache;
     private final Downloader downloader;
 
@@ -43,65 +39,68 @@ final class ViewpointWorkshop {
         this.downloader = downloader;
     }
 
-    Set<String> synchronize(Consumer<WorkshopProgress> progress) throws IOException, InterruptedException {
+    Set<String> synchronize(Consumer<WorkshopProgress> progress, ZomboidLaunchMode mode) throws IOException, InterruptedException {
+        var items = mode.properties().carriedWorkshopItems();
+        if (items.isEmpty()) return Set.of();
         Files.createDirectories(gameCache);
         try (FileChannel channel = FileChannel.open(gameCache.resolve("apocalipse-viewpoint.lock"),
                 StandardOpenOption.CREATE, StandardOpenOption.WRITE);
-             FileLock lock = channel.tryLock()) {
+                FileLock lock = channel.tryLock()) {
             if (lock == null) {
-                throw new IOException("Another launcher is updating the Viewpoint template.");
+                throw new IOException("Another launcher is updating the Project Zomboid Workshop stage.");
             }
-            progress.accept(new WorkshopProgress(Status.PREPARING, "Viewpoint", 0, ITEMS.size()));
-            Path content = downloader.download(ITEMS.stream().map(Item::id).toList(), (id, status) -> {
-                for (int index = 0; index < ITEMS.size(); index++) {
-                    Item item = ITEMS.get(index);
+            progress.accept(new WorkshopProgress(Status.PREPARING, mode.displayName(), 0, items.size()));
+            Path content = downloader.download(items.stream().map(ZomboidWorkshopItem::id).toList(), (id, status) -> {
+                for (int index = 0; index < items.size(); index++) {
+                    var item = items.get(index);
                     if (item.id().equals(id)) {
                         Status phase = switch (status) {
                             case CHECKING -> Status.CHECKING;
                             case VERIFIED -> Status.VERIFIED;
                         };
-                        progress.accept(new WorkshopProgress(phase, item.displayName(), index + 1, ITEMS.size()));
+                        String name = ZOMBIE_BUDDY_ID.equals(item.modId()) ? ZOMBIE_BUDDY_NAME : item.modId();
+                        progress.accept(new WorkshopProgress(phase, name, index + 1, items.size()));
                         break;
                     }
                 }
             });
             String metadata = Files.readString(content.getParent().getParent().resolve("appworkshop_108600.acf"));
             StringBuilder manifests = new StringBuilder();
-            Set<String> javaHashes = new LinkedHashSet<>();
-            for (Item item : ITEMS) {
+            Set<String> javaApprovals = new LinkedHashSet<>();
+            for (var item : items) {
                 manifests.append(item.id()).append('=').append(item.manifest(metadata)).append('\n');
-                javaHashes.addAll(item.javaHashes(content.resolve(item.id()).resolve("mods").resolve(item.modId())));
+                javaApprovals.addAll(approvals(item, sourceMod(content, item)));
             }
-            stage(content, manifests.toString(), javaHashes, progress);
-            return Set.copyOf(javaHashes);
+            stage(content, manifests.toString(), javaApprovals, progress, mode);
+            return Set.copyOf(javaApprovals);
         } catch (OverlappingFileLockException ex) {
-            throw new IOException("Another launcher is updating the Viewpoint template.", ex);
+            throw new IOException("Another launcher is updating the Project Zomboid Workshop stage.", ex);
         }
     }
 
-    private void stage(Path content, String manifests, Set<String> javaHashes, Consumer<WorkshopProgress> progress)
+    private void stage(Path content, String manifests, Set<String> javaApprovals, Consumer<WorkshopProgress> progress, ZomboidLaunchMode mode)
             throws IOException {
         Path workshop = Files.createDirectories(gameCache.resolve("Workshop"));
         Path destination = workshop.resolve(STAGE_NAME);
         Path previous = gameCache.resolve("apocalipse-viewpoint-previous");
         requireManaged(destination);
         requireManaged(previous);
+        var items = mode.properties().carriedWorkshopItems();
         if (Files.exists(previous) && Files.notExists(destination)) {
             Files.move(previous, destination);
         }
         if (Files.exists(destination) && manifests.equals(Files.readString(destination.resolve(MANIFESTS)))
-                && hasStagedMods(destination, javaHashes)) {
+                && hasStagedMods(destination, javaApprovals, items)) {
             deleteTree(previous);
             return;
         }
         deleteTree(previous);
-
-        progress.accept(new WorkshopProgress(Status.STAGING, "Viewpoint", ITEMS.size(), ITEMS.size()));
+        progress.accept(new WorkshopProgress(Status.STAGING, mode.displayName(), items.size(), items.size()));
         Path staging = Files.createTempDirectory(gameCache, "apocalipse-viewpoint-");
         try {
             Path mods = Files.createDirectories(staging.resolve("Contents/mods"));
-            for (Item item : ITEMS) {
-                Path source = content.resolve(item.id()).resolve("mods").resolve(item.modId());
+            for (var item : items) {
+                Path source = sourceMod(content, item);
                 Path target = mods.resolve(item.modId());
                 copyTree(source, target);
                 Files.writeString(target.resolve("workshop.txt"), "id=" + item.id() + "\n");
@@ -109,8 +108,9 @@ final class ViewpointWorkshop {
                     brandZombieBuddy(target);
                 }
             }
-            if (!hasStagedMods(staging, javaHashes)) {
-                throw new IOException("Os arquivos preparados do Viewpoint não correspondem aos verificados na Oficina Steam.");
+            if (!hasStagedMods(staging, javaApprovals, items)) {
+                throw new IOException(
+                        "Os arquivos preparados não correspondem aos verificados na Oficina Steam.");
             }
             Files.writeString(staging.resolve(MANIFESTS), manifests);
             if (Files.exists(destination)) {
@@ -134,20 +134,29 @@ final class ViewpointWorkshop {
         }
     }
 
+    private static Path sourceMod(Path content, ZomboidWorkshopItem item) {
+        return content.resolve(item.id()).resolve("mods").resolve(item.modId());
+    }
+
+    private static List<String> approvals(ZomboidWorkshopItem item, Path mod) throws IOException {
+        return item.javaHashes(mod).stream()
+                .map(hash -> item.modId() + ":" + item.id() + ":" + hash).toList();
+    }
+
     private static void requireManaged(Path stage) throws IOException {
         if (Files.exists(stage, LinkOption.NOFOLLOW_LINKS)
                 && (!Files.isDirectory(stage, LinkOption.NOFOLLOW_LINKS)
-                    || !Files.isRegularFile(stage.resolve(MANIFESTS), LinkOption.NOFOLLOW_LINKS))) {
-            throw new IOException("The launcher does not own the Viewpoint directory " + stage);
+                        || !Files.isRegularFile(stage.resolve(MANIFESTS), LinkOption.NOFOLLOW_LINKS))) {
+            throw new IOException("The launcher does not own the Workshop directory " + stage);
         }
     }
 
-    private static boolean hasStagedMods(Path stage, Set<String> javaHashes) {
+    private static boolean hasStagedMods(Path stage, Set<String> javaApprovals, List<ZomboidWorkshopItem> items) {
         try {
-            Set<String> stagedHashes = new LinkedHashSet<>();
-            for (Item item : ITEMS) {
+            Set<String> stagedApprovals = new LinkedHashSet<>();
+            for (var item : items) {
                 Path mod = stage.resolve("Contents/mods").resolve(item.modId());
-                stagedHashes.addAll(item.javaHashes(mod));
+                stagedApprovals.addAll(approvals(item, mod));
                 if (!("id=" + item.id() + "\n").equals(Files.readString(mod.resolve("workshop.txt")))) {
                     return false;
                 }
@@ -155,7 +164,7 @@ final class ViewpointWorkshop {
                     return false;
                 }
             }
-            return stagedHashes.equals(javaHashes);
+            return stagedApprovals.equals(javaApprovals);
         } catch (IOException ex) {
             return false;
         }
@@ -215,71 +224,6 @@ final class ViewpointWorkshop {
         try (var files = Files.walk(path)) {
             for (Path child : files.sorted(Comparator.reverseOrder()).toList()) {
                 Files.delete(child);
-            }
-        }
-    }
-
-    private record Item(String id, String modId, boolean javaMod) {
-        String displayName() {
-            return ZOMBIE_BUDDY_ID.equals(modId) ? ZOMBIE_BUDDY_NAME : modId;
-        }
-
-        String manifest(String metadata) throws IOException {
-            var item = Pattern.compile("\"" + id + "\"\\s*\\{([^{}]*)}").matcher(metadata);
-            if (item.find()) {
-                var value = MANIFEST_VALUE.matcher(item.group(1));
-                if (value.find() && !"0".equals(value.group(1))) {
-                    return value.group(1);
-                }
-            }
-            throw new IOException("SteamCMD did not record a Workshop manifest for item " + id + ".");
-        }
-
-        Set<String> javaHashes(Path mod) throws IOException {
-            List<Path> directories;
-            try (var files = Files.list(mod)) {
-                directories = files.filter(path -> Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)).toList();
-            }
-            boolean foundMetadata = false;
-            var hashes = new LinkedHashSet<String>();
-            Path realMod = mod.toRealPath();
-            for (Path directory : directories) {
-                Path info = directory.resolve("mod.info");
-                if (!Files.isRegularFile(info, LinkOption.NOFOLLOW_LINKS)) {
-                    continue;
-                }
-                List<String> lines = Files.readAllLines(info).stream().map(String::strip).toList();
-                if (!lines.contains("id=" + modId)) {
-                    continue;
-                }
-                foundMetadata = true;
-                if (!javaMod) {
-                    return Set.of();
-                }
-                collectJavaHashes(mod, realMod, directories, lines, hashes);
-            }
-            if (!hashes.isEmpty()) {
-                return hashes;
-            }
-            String missing = foundMetadata ? " its declared Java mod JAR." : " mod.info for " + modId + ".";
-            throw new IOException("Workshop item " + id + " is missing" + missing);
-        }
-
-        private static void collectJavaHashes(Path mod, Path realMod, List<Path> directories,
-                                              List<String> lines, Set<String> hashes) throws IOException {
-            for (String line : lines) {
-                var jar = JAVA_MOD.matcher(line);
-                if (jar.matches()) {
-                    for (Path directory : directories) {
-                        Path candidate = directory.resolve(jar.group(1).strip()).normalize();
-                        if (candidate.startsWith(mod) && Files.isRegularFile(candidate, LinkOption.NOFOLLOW_LINKS)) {
-                            Path realJar = candidate.toRealPath();
-                            if (realJar.startsWith(realMod)) {
-                                hashes.add(FileHashes.sha256(realJar));
-                            }
-                        }
-                    }
-                }
             }
         }
     }
